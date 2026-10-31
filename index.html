@@ -275,6 +275,10 @@ input[type=range]:focus-visible{outline:3px dashed var(--ink);outline-offset:3px
 .chip{font-size:17px}
 .tgt b{font-size:19px}
 .pwarn{display:block;flex:1 0 100%;font-family:var(--display);font-size:12px;letter-spacing:.06em;color:#ff8a7a;background:#2a0a10;border:2px solid #8a1a1a;padding:4px 6px;margin-bottom:4px;text-align:center}
+.idesc{display:block;margin-top:2px;text-transform:none;letter-spacing:0;font-family:var(--body)}
+.slot .idesc{font-size:14px;line-height:1.2}
+.lockb{flex:none;width:34px;height:34px;display:flex;align-items:center;justify-content:center;border:2px solid var(--ink-soft);background:transparent;color:var(--ink-soft);cursor:pointer;padding:0;margin-right:8px;align-self:center}
+.lockb.on{border-color:#e0b038;color:#e0b038}
 /* cor dos números de PV e tochas: verde acima de 50%, amarelo até 20%, vermelho abaixo */
 .lv-g{color:#2a8a2a !important}.lv-y{color:#a07800 !important}.lv-r{color:#c0302a !important}
 :root[data-skin="zelda"] .lv-g{color:#7ee07e !important}:root[data-skin="zelda"] .lv-y{color:#f6d050 !important}:root[data-skin="zelda"] .lv-r{color:#ff6e5e !important}
@@ -1131,7 +1135,7 @@ function newDungeonRecord(type, name, dice){
 }
 /* vendedor da cidade: 6 vagas, estoque novo a cada masmorra; 2 itens fixos */
 const SHIELD = "Escudo de Madeira (reduz todo dano recebido em 1)";
-const SHOP_FIXED = [{n:"Poção de Vida (recupera todos os PV)", price:20}, {n:SHIELD, price:20}];
+const SHOP_FIXED = [{n:"Poção de Vida (recupera todos os PV)", price:20}];
 /* estoque sorteado: comuns 60%, incomuns 30%, raros 10%; o item (peça, bônus, magia) já nasce definido */
 const DTs = () => DUNGEONS[state.dungeon ? state.dungeon.type : 1];
 const ARMOR_SLOT_PV = Object.fromEntries(Object.values(ARMOR_TABLE).map(([sl,pv])=>[sl,pv]));
@@ -1152,6 +1156,7 @@ const SHOP_POOL = {
     ()=>({n:"Safira da Magia (aprende uma Magia Básica aleatória)", price:60}),
     ()=>({n:"Coroa do Príncipe Degolado (não morre em armadilhas de lâmina)", price:80}),
     ()=>({n:"Poção da Salamandra (recupera braço perdido)", price:60}),
+    ()=>({n:SHIELD, price:20}),
     ()=>({n:"Escudo de Ferro (reduz todo dano recebido em 2)", price:80}),
     ()=>({n:"Escudo Dourado (reduz todo dano recebido em 3)", price:200})],
   raro:[
@@ -1167,13 +1172,29 @@ function rollShopItem(){
 }
 function shopStock(){
   const d = state.dungeon, key = d ? (d.uid || (d.uid = d.name + d.dice.join(""))) : "inicio";
-  if(!state.shop || state.shop.key !== key || state.shop.items.some(it=>it.soon)){
+  if(!state.shop || state.shop.key !== key || state.shop.v !== 2){
     const rand = [];
-    for(let k=0; rand.length<4 && k<40; k++){ const it = rollShopItem(); if(!rand.some(x=>x.n.split(" (")[0] === it.n.split(" (")[0])) rand.push(it); }
-    state.shop = {key, items: SHOP_FIXED.map(x=>({...x})).concat(rand).map(x=>({...x, sold:false}))};
+    for(let k=0; rand.length<5 && k<60; k++){ const it = rollShopItem(); if(!rand.some(x=>x.n.split(" (")[0] === it.n.split(" (")[0])) rand.push(it); }
+    state.shop = {key, v:2, items: SHOP_FIXED.map(x=>({...x})).concat(rand).map(x=>({...x, sold:false}))};
   }
   return state.shop.items;
 }
+/* nome e descrição do item (o que está entre parênteses), sempre com maiúscula */
+const capFirst = t => t ? t.charAt(0).toUpperCase() + t.slice(1) : t;
+function itemName(it){ return it.n.split(" (")[0]; }
+function itemDesc(it, extra){
+  const m = it.n.match(/\((.*)\)\s*$/), parts = [];
+  if(m) parts.push(capFirst(m[1]));
+  if(extra !== false){
+    if(it.weapon || (it.d && !it.shield)) parts.push(`Dano ${it.d}${it.two ? ", Duas Mãos" : ""}`);
+    if(it.slot && it.pv !== undefined) parts.push(`${it.pv} PV`);
+  }
+  return parts.join(" · ");
+}
+const descHTML = (it, extra) => { const d = itemDesc(it, extra); return d ? `<span class="small muted idesc">${esc(d)}</span>` : ""; };
+const SORT_ICON = `<svg width="16" height="12" viewBox="0 0 16 12" aria-hidden="true" shape-rendering="crispEdges"><rect x="0" y="0" width="16" height="2" fill="currentColor"/><rect x="3" y="5" width="10" height="2" fill="currentColor"/><rect x="6" y="10" width="4" height="2" fill="currentColor"/></svg>`;
+const sortBtn = () => `<button class="use" data-act="sortBag" aria-label="Ordenar em ordem alfabética" title="Ordenar A-Z" style="padding:5px 7px;min-height:0;min-width:0;line-height:0">${SORT_ICON}</button>`;
+const lockIcon = on => `<svg width="12" height="14" viewBox="0 0 12 14" aria-hidden="true" shape-rendering="crispEdges">${on ? `<rect x="3" y="0" width="6" height="2" fill="currentColor"/><rect x="2" y="1" width="2" height="5" fill="currentColor"/><rect x="8" y="1" width="2" height="5" fill="currentColor"/>` : `<rect x="5" y="0" width="6" height="2" fill="currentColor"/><rect x="4" y="1" width="2" height="2" fill="currentColor"/><rect x="10" y="1" width="2" height="5" fill="currentColor"/>`}<rect x="0" y="6" width="12" height="8" fill="currentColor"/><rect x="5" y="8" width="2" height="4" fill="var(--paper, #18213d)"/></svg>`;
 const isShield = it => !!it && /^Escudo (de Madeira|de Ferro|Dourado)/.test(it.n);
 function shieldVal(h){ h = h || state.hero; if(!h) return 0; return offs(h).filter(w=>w.shield).reduce((a,w)=>a + +((w.n.match(/em (\d)\)/)||[])[1] || 1), 0); }
 function hasShield(h){ return shieldVal(h) > 0; }
@@ -3082,7 +3103,7 @@ function viewSheet(){
     const it = h.armor[s];
     if(!it) return `<div class="slot"><b>${s}</b><span class="muted">vazio</span></div>`;
     const cur = armorCur(it);
-    return `<button class="slot full eqbtn ${eq===s?"sel":""}" data-act="eqSel" data-s="${s}"><b>${s}</b>${esc(it.n.split(" (")[0])}<span class="small">${cur}/${it.pv} PV${cur<it.pv?" · danificado":""}</span></button>`;
+    return `<button class="slot full eqbtn ${eq===s?"sel":""}" data-act="eqSel" data-s="${s}"><b>${s}</b>${esc(it.n.split(" (")[0])}<span class="small">${cur}/${it.pv} PV${cur<it.pv?" · danificado":""}</span>${descHTML(it, false)}</button>`;
   }).join("");
   const eqActs = (() => {
     if(!eq) return "";
@@ -3102,7 +3123,7 @@ function viewSheet(){
     return `<div class="item-acts"><button class="use" data-act="unequip" data-s="${eq}" ${h.bag.length>=bagMax()?"disabled":""}>Desequipar</button>${fix}</div>${h.bag.length>=bagMax()?`<p class="muted small">Mochila cheia: não dá para guardar.</p>`:""}`;
   })();
   const sel = state.ui.bagSel;
-  const bag = h.bag.map((it,i)=>`<div class="stack" style="gap:6px"><button class="item ${sel===i?"sel":""}" data-act="bagSel" data-i="${i}">${esc(it.n)}${it.weapon?` · Dano ${it.d}`:""}${it.slot?` · ${it.pv} PV`:""}</button>${sel===i?itemActs(it,i):""}</div>`).join("");
+  const bag = h.bag.map((it,i)=>`<div class="stack" style="gap:6px"><button class="item ${sel===i?"sel":""}" data-act="bagSel" data-i="${i}">${it.locked ? `<span class="muted" style="float:right">${lockIcon(true)}</span>` : ""}${esc(itemName(it))}${descHTML(it)}</button>${sel===i?itemActs(it,i):""}</div>`).join("");
   const spells = Object.entries(h.spells);
   const spellHTML = spells.map(([n,s])=>`
     <div class="spell">
@@ -3153,8 +3174,8 @@ function viewSheet(){
     </div>
     <div class="sheet">
       <h3>Mãos <span class="n" style="font-size:12px">${handsUsed(h)}/${handsFree(h)}</span></h3>
-      <button class="slot full eqbtn ${eq==="weapon"?"sel":""}" data-act="eqSel" data-s="weapon"><b>${esc(h.weapon.n.split(" (")[0])}</b><span class="small">Dano ${h.weapon.d}${h.weapon.two?" · Duas Mãos":""}</span></button>
-      ${offs(h).map((w,k)=>`<button class="slot full eqbtn ${eq==="off"+k?"sel":""}" data-act="eqSel" data-s="off${k}" style="margin-top:8px"><b>${esc(w.n.split(" (")[0])}</b><span class="small">${w.shield ? `Escudo: −${+((w.n.match(/em (\d)\)/)||[])[1]||1)} de dano` : `Dano ${w.d}${w.two?" · Duas Mãos":""}`}</span></button>`).join("")}
+      <button class="slot full eqbtn ${eq==="weapon"?"sel":""}" data-act="eqSel" data-s="weapon"><b>${esc(h.weapon.n.split(" (")[0])}</b><span class="small">Dano ${h.weapon.d}${h.weapon.two?" · Duas Mãos":""}</span>${descHTML(h.weapon, false)}</button>
+      ${offs(h).map((w,k)=>`<button class="slot full eqbtn ${eq==="off"+k?"sel":""}" data-act="eqSel" data-s="off${k}" style="margin-top:8px"><b>${esc(w.n.split(" (")[0])}</b><span class="small">${w.shield ? `Escudo: −${+((w.n.match(/em (\d)\)/)||[])[1]||1)} de dano` : `Dano ${w.d}${w.two?" · Duas Mãos":""}`}</span>${descHTML(w, false)}</button>`).join("")}
       ${Array.from({length:Math.max(0, handsLeft(h))},()=>`<div class="slot" style="margin-top:8px"><b>Mão livre</b><span class="muted">vazia</span></div>`).join("")}
       ${eq==="weapon"||/^off/.test(eq||"") ? eqActs : ""}
       ${handsFree() >= 2 ? `<p class="muted small">${(h.arms||2) > 2 ? `${h.arms} braços. ` : ""}${hasLamp() ? "A Lamparina libera a mão da tocha." : raceT("tongue") ? "A língua segura a tocha." : "Uma das mãos segura a tocha."} ${offWeapons(h).length ? (attacksPerTurn(h) > 1 ? `Como ${hasClass("Multidestro")?"Multidestro":"Ambidestro"}, ${attacksPerTurn(h)} armas atacam no mesmo turno.` : "No combate, você escolhe com qual arma atacar.") : ""}</p>` : ""}
@@ -3162,7 +3183,7 @@ function viewSheet(){
   </div>
   <div class="sheet"><h3>Armadura</h3><div class="slots">${armor}</div>${eq && eq!=="weapon" && !/^off/.test(eq) ? eqActs : ""}${wearing(/^Chapéu do Bobo/) ? `<p class="muted small">Com o Chapéu do Bobo você não consegue Mover em Silêncio.</p>` : ""}</div>
   <div class="sheet">
-    <h3>Mochila <span class="n" style="font-size:12px">${bagLabel(h)}</span></h3>
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><h3>Mochila <span class="n" style="font-size:12px">${bagLabel(h)}</span></h3>${h.bag.length > 1 ? sortBtn() : ""}</div>
     ${bag || `<p class="muted small">Vazia. Itens encontrados nas masmorras aparecem aqui.</p>`}
     ${h.provisions ? `<div class="row" style="align-items:center;justify-content:space-between"><p class="small">Provisões: ${N(h.provisions)}</p>${raceT("fungo") ? `<button class="use" data-act="eat">Comer (1d6 PV)</button>` : ""}</div>` : ""}
   </div>
@@ -3382,6 +3403,8 @@ function sellValue(it){
   if(hasClass("Comerciante")) v *= 2;
   return v;
 }
+/* descansar só faz sentido se faltar PV ou uso de magia (não conserta armadura) */
+function needRest(h){ return h.pv < h.pvMax || Object.values(h.spells||{}).some(s=>s.left < s.max); }
 function viewCity(){
   const h = state.hero, d = state.dungeon;
   if(!h) return viewTitle();
@@ -3398,16 +3421,18 @@ function viewCity(){
   <div class="strip"><span>PV<b class="${lvc(h.pv,h.pvMax)}">${h.pv}/${h.pvMax}</b></span><span>Tochas<b class="${lvc(h.torches,10)}">${h.torches}</b></span><span>Moedas<b>${h.coins}</b></span></div>
   <div class="sheet">
     <h3>Taverna e mercado</h3>
-    <button class="btn" data-act="rest" ${h.coins<1&&!hasClass("Campeão")?"disabled":""}>Descansar <small>(${hasClass("Campeão")?"de graça, Campeão":"1 moeda"}: todos os PV e magias)</small></button>
+    ${!needRest(h) ? `<p class="muted small">PV e magias estão completos: não há por que descansar.</p>` : ""}
+    <button class="btn" data-act="rest" ${(h.coins<1&&!hasClass("Campeão")) || !needRest(h) ?"disabled":""}>Descansar <small>(${hasClass("Campeão")?"de graça, Campeão":"1 moeda"}: todos os PV e magias)</small></button>
     <button class="btn ghost" data-act="buyTorch" ${h.coins<1||h.torches>=10?"disabled":""}>Comprar tocha <small>(1 moeda)</small></button>
-    ${broken.length ? `<button class="btn ghost" data-act="repair" ${h.coins<1?"disabled":""}>Consertar armadura <small>(1 moeda)</small></button>` : ""}
+    ${broken.length ? `<span class="label" style="margin-top:6px">Consertar armadura (1 moeda por peça)</span>
+    ${broken.map(sl=>{ const p = h.armor[sl]; return `<div class="spell"><div class="txt"><b>${esc(itemName(p))}</b><span class="small" style="display:block">${sl} · <span class="${lvc(armorCur(p), p.pv)}">${armorCur(p)}/${p.pv} PV</span></span>${descHTML(p, false)}</div><button class="use" data-act="repair" data-s="${sl}" ${h.coins<1?"disabled":""}>Consertar</button></div>`; }).join("")}` : ""}
     ${hasClass("Alquimista") ? `<button class="btn ghost" data-act="brew" ${h.coins<50?"disabled":""}>Fazer Poção de Vida <small>(50 moedas)</small></button>` : ""}
   </div>
   <div class="sheet">
     <h3>Vendedor</h3>
     <p class="muted small">O estoque muda a cada nova masmorra.</p>
     ${shopStock().map((it,i)=>it.soon ? `<div class="spell"><div class="txt"><span class="muted">Vaga vazia</span></div><span class="soon">Em breve</span></div>`
-      : `<div class="spell"><div class="txt"><b>${esc(it.n.split(" (")[0])}</b><span class="small" style="display:block">${esc([(it.n.match(/\((.*)\)/)||[])[1]||"", it.weapon ? `Dano ${it.d}${it.two?", Duas Mãos":""}` : "", it.slot ? `${it.pv} PV` : ""].filter(Boolean).join(" · "))}</span><span class="small muted" style="display:block">${N(it.price)} moedas</span></div>${it.sold ? `<span class="chip">Vendido</span>` : `<button class="use" data-act="buyShop" data-i="${i}" ${h.coins<it.price || h.bag.length>=bagMax() ? "disabled" : ""}>Comprar</button>`}</div>`).join("")}
+      : `<div class="spell"><div class="txt"><b>${esc(itemName(it))}</b>${descHTML(it)}<span class="small" style="display:block;margin-top:2px">${N(it.price)} moedas</span></div>${it.sold ? `<span class="chip">Vendido</span>` : `<button class="use" data-act="buyShop" data-i="${i}" ${h.coins<it.price || h.bag.length>=bagMax() ? "disabled" : ""}>Comprar</button>`}</div>`).join("")}
     ${h.bag.length>=bagMax() ? `<p class="muted small">Mochila cheia.</p>` : ""}
   </div>
   <div class="sheet">
@@ -3416,10 +3441,10 @@ function viewCity(){
     <button class="btn" data-act="go" data-to="advclass">Ver Classes Avançadas</button>
   </div>
   <div class="sheet">
-    <div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><h3>Vender</h3>${h.bag.length > 1 ? `<button class="use" data-act="sortBag" aria-label="Ordenar em ordem alfabética" title="Ordenar A-Z" style="padding:5px 7px;min-height:0;min-width:0;line-height:0"><svg width="16" height="12" viewBox="0 0 16 12" aria-hidden="true" shape-rendering="crispEdges"><rect x="0" y="0" width="16" height="2" fill="currentColor"/><rect x="3" y="5" width="10" height="2" fill="currentColor"/><rect x="6" y="10" width="4" height="2" fill="currentColor"/></svg></button>` : ""}</div>
-    ${h.bag.length ? h.bag.map((it,i)=>`<div class="spell"><div class="txt">${esc(it.n)}</div><button class="use" data-act="sell" data-i="${i}">Vender</button></div>`).join("")
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><h3>Vender</h3>${h.bag.length > 1 ? sortBtn() : ""}</div>
+    ${h.bag.length ? h.bag.map((it,i)=>`<div class="spell"><button class="lockb ${it.locked?"on":""}" data-act="lockItem" data-i="${i}" aria-pressed="${!!it.locked}" aria-label="${it.locked?"Desbloquear":"Bloquear"} a venda de ${esc(itemName(it))}">${lockIcon(!!it.locked)}</button><div class="txt">${esc(itemName(it))}${descHTML(it)}</div><button class="use" data-act="sell" data-i="${i}" ${it.locked?"disabled":""}>Vender</button></div>`).join("")
       : `<p class="muted small">Nada para vender.</p>`}
-    <p class="muted small">Itens comuns valem 1 moeda. Itens mágicos valem 1d6−1.</p>
+    <p class="muted small">Itens comuns valem 1 moeda. Itens mágicos valem 1d6−1. Toque no cadeado para impedir a venda de um item.</p>
   </div>
   ${state.ui.cityMsg ? `<p class="toast">${esc(state.ui.cityMsg)}</p>` : ""}
   ${d && !d.complete ? `<button class="btn" data-act="enter">Voltar para ${esc(d.name)}</button>` : ""}
@@ -4328,14 +4353,19 @@ const actions = {
 
 
   rest(){
-    const h = state.hero, free = hasClass("Campeão"); if(h.coins<1 && !free) return;
+    const h = state.hero, free = hasClass("Campeão"); if((h.coins<1 && !free) || !needRest(h)) return;
     if(!free) h.coins--; h.pv = h.pvMax; Object.values(h.spells).forEach(s=>s.left=s.max);
-    ARMOR_SLOTS.forEach(s=>{ if(h.armor[s]) h.armor[s].cur = h.armor[s].pv; });
     state.ui.cityMsg = "Você descansou. PV e magias recuperados.";
     persist(); render();
   },
   buyTorch(){ const h = state.hero; if(h.coins<1||h.torches>=10) return; h.coins--; h.torches++; state.ui.cityMsg = "Você comprou 1 tocha."; persist(); render(); },
-  repair(){ const h = state.hero; if(h.coins<1) return; const s = ARMOR_SLOTS.find(s=>h.armor[s] && h.armor[s].cur < h.armor[s].pv); if(!s) return; h.coins--; h.armor[s].cur = h.armor[s].pv; state.ui.cityMsg = `${s} consertado.`; persist(); render(); },
+  repair(b){
+    const h = state.hero, s = b && b.dataset.s || ARMOR_SLOTS.find(s=>h.armor[s] && armorCur(h.armor[s]) < h.armor[s].pv), p = s && h.armor[s];
+    if(h.coins<1 || !p || armorCur(p) >= p.pv) return;
+    const before = armorCur(p); h.coins--; p.cur = p.pv;
+    state.ui.cityMsg = `${itemName(p)} consertado: ${before}/${p.pv} → ${p.pv}/${p.pv} PV.`;
+    persist(); render();
+  },
   buyShop(b){
     const h = state.hero, it = shopStock()[+b.dataset.i];
     if(!it || it.soon || it.sold || h.coins < it.price || h.bag.length >= bagMax()) return;
@@ -4366,8 +4396,10 @@ const actions = {
     busy = false; persist(); render();
   },
   advDone(){ state.ui.advRoll = null; persist(); render(); },
+  lockItem(b){ const it = state.hero.bag[+b.dataset.i]; if(!it) return; it.locked = !it.locked; persist(); render(); },
   sell(b){
     const h = state.hero, i = +b.dataset.i, it = h.bag[i];
+    if(!it || it.locked) return;
     const v = sellValue(it);
     h.coins += v; h.bag.splice(i,1); H(h).sold++;
     state.ui.cityMsg = `Você vendeu ${it.n.split(" (")[0]} por ${v} moeda${v===1?"":"s"}.`;
