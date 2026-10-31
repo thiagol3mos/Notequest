@@ -1175,7 +1175,7 @@ function shopStock(){
   return state.shop.items;
 }
 const isShield = it => !!it && /^Escudo (de Madeira|de Ferro|Dourado)/.test(it.n);
-function shieldVal(h){ h = h || state.hero; if(!h || !h.weapon2 || !h.weapon2.shield) return 0; return +((h.weapon2.n.match(/em (\d)\)/)||[])[1] || 1); }
+function shieldVal(h){ h = h || state.hero; if(!h) return 0; return offs(h).filter(w=>w.shield).reduce((a,w)=>a + +((w.n.match(/em (\d)\)/)||[])[1] || 1), 0); }
 function hasShield(h){ return shieldVal(h) > 0; }
 function D(){ return state.dungeon; }
 function DT(){ return DUNGEONS[state.dungeon.type]; }
@@ -1391,10 +1391,18 @@ function blocked(seg){ return seg.mon && !seg.mon.sneak; }
 function lvc(cur, max){ const p = max > 0 ? cur/max : 0; return p > .5 ? "lv-g" : p > .2 ? "lv-y" : "lv-r"; }
 function hasLamp(h){ h = h || state.hero; return !!h && h.bag.some(it=>/^Lamparina/.test(it.n)); }
 function wCopy(w){ return w.shield ? {n:w.n} : {n:w.n, weapon:true, d:w.d, two:w.two, magic:w.magic}; }
-function w2(h){ h = h || state.hero; return h && h.weapon2 && !h.weapon2.shield ? h.weapon2 : null; }
+/* mãos: cada braço segura uma coisa; a tocha ocupa uma mão (a Lamparina libera); Duas Mãos ocupa duas */
+const UNARMED = () => ({n:"Mãos nuas", d:"1d6-3", unarmed:true});
+function offs(h){ h = h || state.hero; if(!h) return []; if(h.weapon2){ (h.off = h.off || []).push(h.weapon2); delete h.weapon2; } return h.off || (h.off = []); }
+function handNeed(w){ return !w || w.unarmed ? 0 : w.two ? 2 : 1; }
+function handsUsed(h){ h = h || state.hero; return handNeed(h.weapon) + offs(h).reduce((a,w)=>a+handNeed(w),0); }
+function handsLeft(h){ h = h || state.hero; return handsFree(h) - handsUsed(h); }
+function offWeapons(h){ return offs(h).map((w,i)=>({w,i})).filter(x=>!x.w.shield); }
+function attacksPerTurn(h){ h = h || state.hero; const n = 1 + offWeapons(h).length; return hasClass("Multidestro", h) ? n : hasClass("Ambidestro", h) ? Math.min(2, n) : 1; }
+function w2(h){ const o = offWeapons(h)[0]; return o ? o.w : null; }
 /* sem a Lamparina, a segunda arma volta para a mochila */
 /* mãos livres para armas: a tocha ocupa uma, a Lamparina libera; sem um braço, sobra uma só */
-function handsFree(h){ h = h || state.hero; if(!h) return 1; return Math.min(2, Math.max(0, (h.arms || 2) - (hasLamp(h) || raceT("tongue", h) ? 0 : 1))); }
+function handsFree(h){ h = h || state.hero; if(!h) return 1; return Math.max(0, (h.arms || 2) - (hasLamp(h) || raceT("tongue", h) ? 0 : 1)); }
 /* um braço, sem Lamparina e sem poção que devolva o braço: fim de carreira ao chegar na cidade */
 function mustRetire(h){ h = h || state.hero; return !!h && handsFree(h) === 0 && (h.arms||2) < 2 && !h.bag.some(it=>/^Poção da Salamandra|^Poção Mão na Roda/.test(it.n)); }
 function normalizeHands(){
@@ -1403,12 +1411,12 @@ function normalizeHands(){
     ARMOR_SLOTS.forEach(sl=>{ const p = h.armor[sl]; if(p && !p.stone){ h.bag.push(p); delete h.armor[sl]; } });
     persist();
   }
-  const n = handsFree(h), inDg = state.dungeon && state.dungeon.inside, out = [];
-  if(h.weapon2 && (n < 2 || h.weapon.two)){ h.bag.push(wCopy(h.weapon2)); out.push(h.weapon2.n); h.weapon2 = null; }
-  if(h.weapon.two && n < 2){ h.bag.push(wCopy(h.weapon)); out.push(h.weapon.n); h.weapon = {n:"Mãos nuas", d:"1d6-3", unarmed:true}; }
+  const n = handsFree(h), inDg = state.dungeon && state.dungeon.inside, out = [], o = offs(h);
+  while(handsUsed(h) > n && o.length){ const w = o.pop(); h.bag.push(wCopy(w)); out.push(w.n); }
+  if(handsUsed(h) > n && !h.weapon.unarmed){ h.bag.push(wCopy(h.weapon)); out.push(h.weapon.n); h.weapon = UNARMED(); }
   if(!out.length) return;
   if(inDg) log(`Sem mãos livres, ${out.map(x=>x.split(" (")[0]).join(" e ")} ${out.length>1?"voltam":"volta"} para a mochila.`);
-  if(state.ui && /^weapon/.test(state.ui.eqSel||"")) state.ui.eqSel = null;
+  if(state.ui && /^(weapon|off)/.test(state.ui.eqSel||"")) state.ui.eqSel = null;
   persist();
 }
 /* chave comum só vale na masmorra onde foi achada; Chave Mestra vale em qualquer uma */
@@ -1467,7 +1475,7 @@ function samambro(){
 }
 function hurt(n, cause){
   const h = state.hero;
-  if(hasShield(h) && n > 0){ const v = Math.min(n, shieldVal(h)); n -= v; log(`O ${h.weapon2.n.split(" (")[0]} segura ${v} de dano.`); }
+  if(hasShield(h) && n > 0){ const v = Math.min(n, shieldVal(h)); n -= v; log(`${offs(h).filter(w=>w.shield).length > 1 ? "Seus escudos seguram" : "O escudo segura"} ${v} de dano.`); }
   if(h.shield > 0){ const a = Math.min(h.shield, n); h.shield -= a; n -= a; log(`O Escudo Mágico absorve ${a} de dano.`); }
   h.pv = Math.max(0, h.pv - n);
   if(h.pv <= 0 && samambro()) return true;
@@ -3043,22 +3051,24 @@ function itemActs(it, i){
   const acts = [];
   const noArmor = raceT("noArmor") || raceT("ogro"), noPot = raceT("ogro");
   if(it.slot) acts.push(`<button class="use" data-act="equip" data-i="${i}" ${noArmor?"disabled":""}>Vestir</button>`);
-  if(isShield(it)){
-    const ok = handsFree() >= 2 && !state.hero.weapon.two;
-    acts.push(`<button class="use" data-act="wieldShield" data-i="${i}" ${ok?"":"disabled"}>Empunhar escudo</button>`);
-  }
+  const h0 = state.hero;
+  if(isShield(it)) acts.push(`<button class="use" data-act="wieldShield" data-i="${i}" ${handsLeft() >= 1 ? "" : "disabled"}>Empunhar escudo</button>`);
   if(it.weapon){
-    if(handsFree() === 0) acts.push(`<button class="use" disabled>Empunhar</button>`);
-    else if(it.two) acts.push(`<button class="use" data-act="wield" data-i="${i}" ${handsFree()<2?"disabled":""}>Empunhar (Duas Mãos)</button>`);
-    else if(handsFree() >= 2) acts.push(`<button class="use" data-act="wield" data-i="${i}" data-s="weapon">Empunhar (Arma 1)</button><button class="use" data-act="wield" data-i="${i}" data-s="weapon2">Empunhar (Arma 2)</button>`);
-    else acts.push(`<button class="use" data-act="wield" data-i="${i}">Empunhar</button>`);
+    const need = it.two ? 2 : 1;
+    if(handsFree() < need) acts.push(`<button class="use" disabled>Empunhar</button>`);
+    else if(h0.weapon.unarmed) acts.push(`<button class="use" data-act="wield" data-i="${i}" data-s="main">Empunhar${it.two?" (Duas Mãos)":""}</button>`);
+    else {
+      acts.push(`<button class="use" data-act="wield" data-i="${i}" data-s="main">Na mão principal</button>`);
+      if(handsLeft() >= need) acts.push(`<button class="use" data-act="wield" data-i="${i}" data-s="off">Na mão livre</button>`);
+    }
   }
   const sp = (it.n.match(/^Pergaminho Mágico \((.+)\)/)||[])[1];
   const inDg = state.dungeon && state.dungeon.inside;
   const combatOnly = /^Poção da Fúria/.test(it.n) || (sp && !/^(Cura|Luz)$/.test(sp) && !(sp === "Teletransporte" && inDg));
   if(/^Poção|^Pergaminho|^Safira/.test(it.n) && !combatOnly) acts.push(`<button class="use" data-act="useItem" data-i="${i}" ${noPot && /^Poção|^Pergaminho/.test(it.n)?"disabled":""}>Usar</button>`);
   acts.push(`<button class="use" data-act="drop" data-i="${i}">Descartar</button>`);
-  const note = isShield(it) && (handsFree() < 2 || state.hero.weapon.two) ? `<p class="muted small">${(state.hero.arms||2) < 2 ? "Com um braço só, não dá para usar o escudo." : state.hero.weapon.two ? "A arma de Duas Mãos ocupa as duas mãos." : "O escudo ocupa a segunda mão: precisa da Lamparina, porque a tocha ocupa uma das mãos."}</p>` : it.slot && noArmor ? `<p class="muted small">Sua raça não pode vestir armadura.</p>` : noPot && /^Poção|^Pergaminho/.test(it.n) ? `<p class="muted small">Ogros não usam poções nem pergaminhos.</p>` : combatOnly ? `<p class="muted small">${sp === "Teletransporte" ? "Só dá para usar dentro da masmorra." : "Só dá para usar durante um combate."}</p>` : it.weapon && handsFree() === 0 ? `<p class="muted small">Com um braço só, a mão que sobra segura a tocha.</p>` : it.weapon && it.two && handsFree() < 2 ? `<p class="muted small">${(state.hero.arms||2) < 2 ? "Com um braço só, não dá para usar armas de Duas Mãos." : "Armas de Duas Mãos precisam da Lamparina, porque a tocha ocupa uma das mãos."}</p>` : "";
+  const handNote = () => handsFree() === 0 ? "A única mão que sobra segura a tocha." : !hasLamp() && !raceT("tongue") ? "Todas as mãos estão ocupadas, e a tocha segura uma delas. A Lamparina libera essa mão." : "Todas as mãos estão ocupadas. Desequipe algo para liberar uma.";
+  const note = isShield(it) && handsLeft() < 1 ? `<p class="muted small">O escudo ocupa uma mão. ${handNote()}</p>` : it.slot && noArmor ? `<p class="muted small">Sua raça não pode vestir armadura.</p>` : noPot && /^Poção|^Pergaminho/.test(it.n) ? `<p class="muted small">Ogros não usam poções nem pergaminhos.</p>` : combatOnly ? `<p class="muted small">${sp === "Teletransporte" ? "Só dá para usar dentro da masmorra." : "Só dá para usar durante um combate."}</p>` : it.weapon && handsFree() < (it.two ? 2 : 1) ? `<p class="muted small">${it.two ? "Armas de Duas Mãos precisam de duas mãos livres." : ""} ${handNote()}</p>` : "";
   return `<div class="item-acts">${acts.join("")}</div>${note}`;
 }
 function viewSheet(){
@@ -3077,8 +3087,8 @@ function viewSheet(){
   const eqActs = (() => {
     if(!eq) return "";
     const inDg = state.dungeon && state.dungeon.inside, smith = hasClass("Ferreiro");
-    if(eq === "weapon" || eq === "weapon2"){
-      if(eq === "weapon" ? h.weapon.unarmed : !h.weapon2) return "";
+    if(eq === "weapon" || /^off/.test(eq)){
+      if(eq === "weapon" ? h.weapon.unarmed : !offs(h)[+eq.slice(3)]) return "";
       return `<div class="item-acts"><button class="use" data-act="unequip" data-s="${eq}" ${h.bag.length>=bagMax()?"disabled":""}>Desequipar</button></div>${h.bag.length>=bagMax()?`<p class="muted small">Mochila cheia.</p>`:""}`;
     }
     const it = h.armor[eq]; if(!it) return "";
@@ -3142,14 +3152,15 @@ function viewSheet(){
       </div>
     </div>
     <div class="sheet">
-      <h3>Arma</h3>
+      <h3>Mãos <span class="n" style="font-size:12px">${handsUsed(h)}/${handsFree(h)}</span></h3>
       <button class="slot full eqbtn ${eq==="weapon"?"sel":""}" data-act="eqSel" data-s="weapon"><b>${esc(h.weapon.n.split(" (")[0])}</b><span class="small">Dano ${h.weapon.d}${h.weapon.two?" · Duas Mãos":""}</span></button>
-      ${handsFree() >= 2 ? (h.weapon.two ? `<div class="slot" style="margin-top:8px"><b>Arma 2</b><span class="muted">ocupada pela arma de Duas Mãos</span></div>` : h.weapon2 ? `<button class="slot full eqbtn ${eq==="weapon2"?"sel":""}" data-act="eqSel" data-s="weapon2" style="margin-top:8px"><b>${esc(h.weapon2.n.split(" (")[0])}</b><span class="small">${h.weapon2.shield ? `Escudo: −${shieldVal(h)} em todo dano recebido` : `Dano ${h.weapon2.d}${h.weapon2.two?" · Duas Mãos":""}`}</span></button>` : `<div class="slot" style="margin-top:8px"><b>Arma 2</b><span class="muted">vazio</span></div>`) : ""}
-      ${eq==="weapon"||eq==="weapon2" ? eqActs : ""}
-      ${handsFree() >= 2 ? `<p class="muted small">${hasLamp() ? "A Lamparina libera a mão da tocha." : "Você tem as mãos livres para duas armas."} ${hasClass("Ambidestro")||hasClass("Multidestro") ? "Como Ambidestro, as duas armas atacam no mesmo turno." : "No combate, você escolhe com qual arma atacar."}</p>` : ""}
+      ${offs(h).map((w,k)=>`<button class="slot full eqbtn ${eq==="off"+k?"sel":""}" data-act="eqSel" data-s="off${k}" style="margin-top:8px"><b>${esc(w.n.split(" (")[0])}</b><span class="small">${w.shield ? `Escudo: −${+((w.n.match(/em (\d)\)/)||[])[1]||1)} de dano` : `Dano ${w.d}${w.two?" · Duas Mãos":""}`}</span></button>`).join("")}
+      ${Array.from({length:Math.max(0, handsLeft(h))},()=>`<div class="slot" style="margin-top:8px"><b>Mão livre</b><span class="muted">vazia</span></div>`).join("")}
+      ${eq==="weapon"||/^off/.test(eq||"") ? eqActs : ""}
+      ${handsFree() >= 2 ? `<p class="muted small">${(h.arms||2) > 2 ? `${h.arms} braços. ` : ""}${hasLamp() ? "A Lamparina libera a mão da tocha." : raceT("tongue") ? "A língua segura a tocha." : "Uma das mãos segura a tocha."} ${offWeapons(h).length ? (attacksPerTurn(h) > 1 ? `Como ${hasClass("Multidestro")?"Multidestro":"Ambidestro"}, ${attacksPerTurn(h)} armas atacam no mesmo turno.` : "No combate, você escolhe com qual arma atacar.") : ""}</p>` : ""}
     </div>
   </div>
-  <div class="sheet"><h3>Armadura</h3><div class="slots">${armor}</div>${eq && eq!=="weapon" && eq!=="weapon2" ? eqActs : ""}${wearing(/^Chapéu do Bobo/) ? `<p class="muted small">Com o Chapéu do Bobo você não consegue Mover em Silêncio.</p>` : ""}</div>
+  <div class="sheet"><h3>Armadura</h3><div class="slots">${armor}</div>${eq && eq!=="weapon" && !/^off/.test(eq) ? eqActs : ""}${wearing(/^Chapéu do Bobo/) ? `<p class="muted small">Com o Chapéu do Bobo você não consegue Mover em Silêncio.</p>` : ""}</div>
   <div class="sheet">
     <h3>Mochila <span class="n" style="font-size:12px">${bagLabel(h)}</span></h3>
     ${bag || `<p class="muted small">Vazia. Itens encontrados nas masmorras aparecem aqui.</p>`}
@@ -3527,12 +3538,12 @@ async function afterHeroAction(){
   pickNextTarget();
   await runMonsterTurn();
 }
-function dualAttack(h){ h = h || state.hero; return !!w2(h) && (hasClass("Ambidestro", h) || hasClass("Multidestro", h)); }
+function dualAttack(h){ return attacksPerTurn(h) > 1; }
 async function heroAttack(kind, wn){
   const c = C(), h = state.hero, u = c.units[c.sel];
   if(!u || u.pv<=0) return;
   busy = true; rollLog = []; lockButtons(); const tr = $("#etray"); if(tr) tr.innerHTML = "";
-  const W = wn === 2 && w2(h) ? w2(h) : h.weapon;
+  const W = typeof wn === "number" && offs(h)[wn] && !offs(h)[wn].shield ? offs(h)[wn] : h.weapon;
   const expr = kind === "horn" ? "1d6" : W.d;
   const [die] = await roll(kind === "horn" ? "Chifre" : "Ataque", 1);
   const mod = +((expr.match(/([+-]\d+)$/)||[])[1] || 0);
@@ -3555,10 +3566,10 @@ async function heroAttack(kind, wn){
     if(h.pv <= 0){ finishDeath("A fúria dos deuses"); return; }
   }
   if(die === 1 && raceT("keyroz") && alive().length){ cLog("Keyroz: você tirou 1 e desaparece do combate!"); fleeCombat(); return; }
-  if(kind !== "horn" && wn === 1 && dualAttack(h) && alive().length){
-    c.second = true; pickNextTarget(); busy = false; persist(); render(); return;
+  if(kind !== "horn" && c.chain && c.chain.length && alive().length){
+    pickNextTarget(); busy = false; persist(); render(); return;
   }
-  c.second = false;
+  c.chain = null;
   await afterHeroAction();
 }
 /* magias: quando dá para usar */
@@ -3836,11 +3847,11 @@ function viewCombat(){
       <button class="btn ghost" data-act="rechargeCancel">Cancelar</button></div>`;
     else panel = `<div class="stack">
       <p class="small">Seu turno. Alvo: <b>${esc(sel ? sel.name : "")}</b>. Toque em outro monstro para trocar.</p>
-      ${c.second ? `<button class="btn" data-act="attack">Segunda arma: atacar com ${esc(h.weapon2.n.split(" (")[0])} <small>(${h.weapon2.d})</small></button>
-      <p class="muted small">Toque em outro monstro se quiser mudar o alvo da segunda arma.</p></div>` : `
-      ${handsFree() === 0 ? `<p class="note">Com um braço só e a tocha na mão, você não consegue atacar com armas. Use magias, itens ou fuja.</p>` : dualAttack() ? `<button class="btn" data-act="attack" data-w="1">Atacar com ${esc(h.weapon.n.split(" (")[0])} <small>(${h.weapon.d})</small> <small>+ ${esc(h.weapon2.n.split(" (")[0])}</small></button>
-      <p class="muted small">Ambidestro: as duas armas atacam neste turno. Depois do primeiro golpe, você pode trocar o alvo da segunda.</p>` : `<button class="btn" data-act="attack" data-w="1">Atacar com ${esc(h.weapon.n.split(" (")[0])} <small>(${h.weapon.d})</small></button>
-      ${w2(h) ? `<button class="btn" data-act="attack" data-w="2">Atacar com ${esc(h.weapon2.n.split(" (")[0])} <small>(${h.weapon2.d})</small></button>` : ""}`}
+      ${c.chain && c.chain.length ? `<button class="btn" data-act="attack">Próxima arma: atacar com ${esc(offs(h)[c.chain[0]].n.split(" (")[0])} <small>(${offs(h)[c.chain[0]].d})</small></button>
+      <p class="muted small">Toque em outro monstro se quiser mudar o alvo desta arma.</p></div>` : `
+      ${handsFree() === 0 ? `<p class="note">Com um braço só e a tocha na mão, você não consegue atacar com armas. Use magias, itens ou fuja.</p>` : attacksPerTurn() > 1 ? `<button class="btn" data-act="attack" data-w="m">Atacar com ${[h.weapon, ...offWeapons(h).slice(0, attacksPerTurn()-1).map(x=>x.w)].map(w=>esc(w.n.split(" (")[0])).join(" + ")}</button>
+      <p class="muted small">${hasClass("Multidestro")?"Multidestro":"Ambidestro"}: ${attacksPerTurn()} armas atacam neste turno. Depois de cada golpe, você pode trocar o alvo.</p>` : `<button class="btn" data-act="attack" data-w="m">Atacar com ${esc(h.weapon.n.split(" (")[0])} <small>(${h.weapon.d})</small></button>
+      ${offWeapons(h).map(({w,i})=>`<button class="btn" data-act="attack" data-w="${i}">Atacar com ${esc(w.n.split(" (")[0])} <small>(${w.d})</small></button>`).join("")}`}
       ${raceT("zumbi") ? `<button class="btn ghost" data-act="playDead">Fingir de morto e fugir</button>` : ""}
       ${raceT("horn") ? `<button class="btn ghost" data-act="horn">Chifrada <small>(1d6)</small></button>` : ""}
       ${spells.length ? `<span class="label">Magias</span><div class="dlist">${spells.map(([n,s])=>`<button class="dbtn" data-act="cspell" data-n="${esc(n)}">${n} ×${s.left}</button>`).join("")}</div>` : ""}
@@ -3997,7 +4008,7 @@ const actions = {
   retire(){
     const h = state.hero, d = state.dungeon; if(!h || !mustRetire(h)) return;
     const items = h.bag.map(it=>({...it}));
-    [h.weapon, h.weapon2].forEach(w=>{ if(w && !w.unarmed) items.push(wCopy(w)); });
+    [h.weapon, ...offs(h)].forEach(w=>{ if(w && !w.unarmed) items.push(wCopy(w)); });
     const armor = {};
     ARMOR_SLOTS.forEach(sl=>{ const p = h.armor[sl]; if(p){ armor[sl] = {...p}; armor[sl].cur = p.pv; } });
     state.cemetery.push({name:h.name, who:`${raceName(h)} ${classLabel(h)}`, where:d&&d.name, cause:"Aposentado: ferimentos irreparáveis", retired:true});
@@ -4123,22 +4134,24 @@ const actions = {
   },
   wieldShield(b){
     const h = state.hero, i = +b.dataset.i, it = h.bag[i];
-    if(!it || !isShield(it) || handsFree() < 2 || h.weapon.two) return;
+    if(!it || !isShield(it) || handsLeft() < 1) return;
     h.bag.splice(i,1);
-    if(h.weapon2) h.bag.push(wCopy(h.weapon2));
-    h.weapon2 = {n:it.n, shield:true};
+    offs(h).push({n:it.n, shield:true});
     state.ui.bagSel = null; persist(); render();
   },
   wield(b){
     const h = state.hero, i = +b.dataset.i, it = h.bag[i];
-    if(handsFree() === 0 || (it.two && handsFree() < 2)) return;
-    const slot = !it.two && b.dataset.s === "weapon2" && handsFree() >= 2 ? "weapon2" : "weapon";
-    h.bag.splice(i,1);
-    const back = [];
-    if(it.two){ back.push(h.weapon, h.weapon2); h.weapon2 = null; }
-    else { back.push(h[slot]); if(slot === "weapon2" && h.weapon.two){ back.push(h.weapon); h.weapon = {n:"Mãos nuas", d:"1d6-3", unarmed:true}; } }
-    h[slot] = {n:it.n, d:it.d, two:it.two, magic:it.magic};
-    back.forEach(w=>{ if(w && !w.unarmed) h.bag.push(wCopy(w)); });
+    const need = it.two ? 2 : 1, nw = {n:it.n, d:it.d, two:it.two, magic:it.magic};
+    if(handsFree() < need) return;
+    if(b.dataset.s === "off" && !h.weapon.unarmed){
+      if(handsLeft() < need) return;
+      h.bag.splice(i,1); offs(h).push(nw);
+    } else {
+      h.bag.splice(i,1);
+      const old = h.weapon; h.weapon = nw;
+      if(old && !old.unarmed) h.bag.push(wCopy(old));
+      const o = offs(h); while(handsUsed(h) > handsFree() && o.length) h.bag.push(wCopy(o.pop()));
+    }
     state.ui.bagSel = null; persist(); render();
   },
   useItem(b){
@@ -4148,7 +4161,8 @@ const actions = {
     if(/^Poção de Vida/.test(it.n)) h.pv = h.pvMax;
     if(/^Poção de Magia/.test(it.n)) Object.values(h.spells).forEach(s=>s.left=s.max);
     if(/^Poção da Luminescência/.test(it.n)) h.torches = Math.min(10, h.torches+2);
-    if(/^Poção da Salamandra|^Poção Mão na Roda/.test(it.n)) h.arms = Math.min(raceStart(h).arms, (h.arms||2)+1);
+    if(/^Poção da Salamandra/.test(it.n)) h.arms = Math.max(h.arms||2, raceStart(h).arms);
+    if(/^Poção Mão na Roda/.test(it.n)) h.arms = (h.arms||2) + 1;
     const sp = (it.n.match(/^Pergaminho Mágico \((.+)\)/)||[])[1];
     let msg = `Você usou ${it.n.split(" (")[0]}.`;
     if(sp === "Cura"){ const before = h.pv; h.pv = Math.min(h.pvMax, h.pv+5); msg = `Você leu o Pergaminho de Cura e recuperou ${h.pv-before} PV.`; }
@@ -4217,8 +4231,8 @@ const actions = {
   unequip(b){
     const h = state.hero, s = b.dataset.s;
     if(h.bag.length >= bagMax()) return;
-    if(s === "weapon"){ const w = h.weapon; h.bag.push(wCopy(w)); h.weapon = {n:"Mãos nuas", d:"1d6-3", unarmed:true}; }
-    else if(s === "weapon2"){ if(!h.weapon2) return; h.bag.push(wCopy(h.weapon2)); h.weapon2 = null; }
+    if(s === "weapon"){ const w = h.weapon; h.bag.push(wCopy(w)); h.weapon = UNARMED(); }
+    else if(/^off/.test(s)){ const o = offs(h), k = +s.slice(3); if(!o[k]) return; h.bag.push(wCopy(o[k])); o.splice(k,1); }
     else { h.bag.push(h.armor[s]); delete h.armor[s]; }
     state.ui.eqSel = null; persist(); render();
   },
@@ -4232,7 +4246,17 @@ const actions = {
   },
   fight(b){ startCombat(b.dataset.surprise === "1"); },
   target(b){ C().sel = +b.dataset.i; persist(); render(); },
-  attack(b){ const c = C(); if(handsFree() === 0) return; heroAttack("weapon", c && c.second ? 2 : +(b && b.dataset.w) || 1); },
+  attack(b){
+    const c = C(), h = state.hero; if(handsFree() === 0) return;
+    let wn;
+    if(c.chain && c.chain.length) wn = c.chain.shift();
+    else {
+      const d = b && b.dataset.w;
+      wn = d === undefined || d === "m" ? "m" : +d;
+      if(wn === "m" && attacksPerTurn() > 1) c.chain = offWeapons(h).map(x=>x.i).slice(0, attacksPerTurn()-1);
+    }
+    heroAttack("weapon", wn);
+  },
   playDead(){ if(!raceT("zumbi")) return; cLog("Você se faz de morto... e escapa quando os monstros se distraem."); fleeCombat(); },
   horn(){ heroAttack("horn"); },
   cspell(b){ heroSpell(b.dataset.n); },
