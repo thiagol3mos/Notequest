@@ -683,7 +683,7 @@ const DUNGEONS = {
     trap:[TRAP_BLADE,["dmg","Lanças saem do chão.",5],TRAP_PIT,TRAP_DART,TRAP_NADA,TRAP_NADA],
     cont:C_SAN, mon:M_SAN,
     tes:["Objeto Religioso (vale 3 moedas na cidade)",LIFE,"@scroll",JEWEL,"@mar","@mag"],
-    mar:["Vela dos Protetores (descarte e o próximo baú será em dobro)","Poção Abençoada (destrua um item amaldiçoado)",LUCK,FURY,KEY_M,"Poção da Luminescência (vale como duas tochas)"],
+    mar:["Vela dos Protetores (acenda a vela e os bônus do próximo baú serão dobrados!)","Poção Abençoada (destrua um item amaldiçoado)",LUCK,FURY,KEY_M,"Poção da Luminescência (vale como duas tochas)"],
     mag:["[Armadura] do Sacerdote (coberto por símbolos religiosos)","[Armadura] dos Deuses (ignora Morte Súbita)","[Armadura] dos Anjos (+2 PV)","[Arma] da Destruição (causa +2 de dano)","[Arma] Vampírica (recupera 1 PV a cada ataque)","[Arma] Vorpal (mata na hora quando cai 6 no dado)"],
     boss:[[1,"Deus Rato",30,5,"Veneno","Com seus seis metros de altura, o Deus Rato está te esperando ali com sua maça gigante."],
           [2,"Guardião Etéreo",9,3,"Intangível","Em volta de um grande sarcófago coberto por runas estão os 2 Guardiões Etéreos."],
@@ -1172,7 +1172,7 @@ const SHOP_POOL = {
   incomum:[
     ()=>({n:"Apito Goblin (Goblins fogem ao ouvir)", price:50}),
     ()=>({n:"Colar de Alho (dano +1 contra Vampiro e Carniçal)", price:20}),
-    ()=>({n:"Vela dos Protetores (descarte e o próximo baú será em dobro)", price:30}),
+    ()=>({n:"Vela dos Protetores (acenda a vela e os bônus do próximo baú serão dobrados!)", price:30}),
     ()=>({n:"Amuleto dos Mortos (ignora efeito de Mortos-Vivos)", price:30}),
     ()=>({n:LAMP, price:40}),
     ()=>({n:"Safira da Magia (aprende uma Magia Básica aleatória)", price:60}),
@@ -1449,6 +1449,9 @@ function handsFree(h){ h = h || state.hero; if(!h) return 1; return Math.max(0, 
 /* um braço, sem Lamparina e sem poção que devolva o braço: fim de carreira ao chegar na cidade */
 function mustRetire(h){ h = h || state.hero; return !!h && handsFree(h) === 0 && (h.arms||2) < 2 && !h.bag.some(it=>/^Poção da Salamandra|^Poção Mão na Roda/.test(it.n)); }
 function normalizeHands(){
+  const VELA_N = "Vela dos Protetores (acenda a vela e os bônus do próximo baú serão dobrados!)";
+  if(state.hero) state.hero.bag.forEach(it=>{ if(/^Vela dos Protetores/.test(it.n)) it.n = VELA_N; });
+  if(state.shop && state.shop.items) state.shop.items.forEach(it=>{ if(/^Vela dos Protetores/.test(it.n)) it.n = VELA_N; });
   const h = state.hero; if(!h) return;
   if((raceT("noArmor", h) || raceT("ogro", h)) && ARMOR_SLOTS.some(sl=>h.armor[sl] && !h.armor[sl].stone)){
     ARMOR_SLOTS.forEach(sl=>{ const p = h.armor[sl]; if(p && !p.stone){ h.bag.push(p); delete h.armor[sl]; } });
