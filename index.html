@@ -783,9 +783,11 @@ function encodeSave(){
   return SAVE_PREFIX + btoa(unescape(encodeURIComponent(json)));
 }
 function decodeSave(code){
-  const c = code.trim().replace(/\s+/g,"");
-  if(!c.startsWith(SAVE_PREFIX)) throw new Error("prefixo");
-  const s = JSON.parse(decodeURIComponent(escape(atob(c.slice(SAVE_PREFIX.length)))));
+  const raw = code.replace(/\s+/g,"");
+  const at = raw.search(/nq1:/i);
+  if(at < 0) throw new Error("prefixo");
+  const c = raw.slice(at + SAVE_PREFIX.length).replace(/[^A-Za-z0-9+/=]/g,"");
+  const s = JSON.parse(decodeURIComponent(escape(atob(c))));
   if(!s || s.v!==1) throw new Error("versão");
   return s;
 }
@@ -4107,7 +4109,8 @@ function viewSave(){
   <div class="sheet">
     <h3>Importar</h3>
     <p class="small">Cole um código salvo. Isso substitui o jogo atual deste aparelho.</p>
-    <textarea id="importCode" placeholder="NQ1:..."></textarea>
+    <textarea id="importCode" placeholder="NQ1:..." autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false"></textarea>
+    ${navigator.clipboard && navigator.clipboard.readText ? `<button class="btn ghost" data-act="pasteSave">Colar da área de transferência</button>` : ""}
     <button class="btn ghost" data-act="import">Restaurar este save</button>
   </div>
   <p class="toast" id="toast">${esc(toastMsg)}</p>`;
@@ -4563,6 +4566,16 @@ const actions = {
     const ok = () => { toastMsg = "Código copiado."; $("#toast").textContent = toastMsg; };
     const fallback = () => { ta.focus(); ta.select(); toastMsg = "Código selecionado. Toque em Copiar no menu do iPhone."; $("#toast").textContent = toastMsg; };
     try{ navigator.clipboard.writeText(ta.value).then(ok, fallback); }catch(e){ fallback(); }
+  },
+  async pasteSave(){
+    const say = m => { toastMsg = m; $("#toast").textContent = m; };
+    let txt = "";
+    try{ txt = await navigator.clipboard.readText(); }
+    catch(e){ say("O aparelho não liberou a área de transferência. Toque e segure no campo e escolha Colar."); return; }
+    if(!txt || !txt.trim()){ say("A área de transferência está vazia. Copie o código primeiro."); return; }
+    $("#importCode").value = txt.trim();
+    try{ decodeSave(txt); say("Código colado. Confira e toque em Restaurar este save."); }
+    catch(e){ say("O texto copiado não parece um save do NoteQuest. Confira se copiou o código inteiro."); }
   },
   import(){
     const code = $("#importCode").value;
