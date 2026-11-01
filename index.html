@@ -208,6 +208,7 @@ textarea{font-size:16px;font-family:ui-monospace,monospace;min-height:110px;resi
 .rg .dice{display:flex;gap:6px}
 .rg canvas{width:40px;height:40px}
 .rg .label{font-size:11px}
+.rnote{font-family:var(--body);font-size:18px;color:#f6d050;text-align:center;max-width:140px;line-height:1.05}
 .seg-title{display:flex;justify-content:space-between;align-items:baseline;gap:8px}
 .seg-title h3{text-transform:none;letter-spacing:.02em;font-size:20px}
 .mon{border:3px solid var(--ink);padding:10px;display:flex;flex-direction:column;gap:6px}
@@ -279,6 +280,19 @@ input[type=range]:focus-visible{outline:3px dashed var(--ink);outline-offset:3px
 .slot .idesc{font-size:14px;line-height:1.2}
 .lockb{flex:none;width:34px;height:34px;display:flex;align-items:center;justify-content:center;border:2px solid var(--ink-soft);background:transparent;color:var(--ink-soft);cursor:pointer;padding:0;margin-right:8px;align-self:center}
 .lockb.on{border-color:#e0b038;color:#e0b038}
+.maphud{position:absolute;left:8px;top:8px;right:60px;display:flex;justify-content:space-between;gap:6px;background:var(--paper);border:2px solid var(--ink);padding:5px 8px;z-index:2;pointer-events:none}
+.maphud span{font-family:var(--display);font-size:10px;letter-spacing:.08em;text-transform:uppercase;display:flex;flex-direction:column;gap:2px;color:var(--ink-soft)}
+.mapbuff{position:absolute;left:8px;top:52px;display:flex;align-items:center;gap:6px;background:var(--paper);border:2px solid #e0a040;color:#e0a040;padding:3px 8px 3px 6px;z-index:2;pointer-events:none;font-family:var(--display);font-size:10px;letter-spacing:.08em;text-transform:uppercase}
+.mapbuff canvas{width:10px;height:16px;image-rendering:pixelated}
+.mapbuff b{font-family:var(--num);font-size:13px;letter-spacing:0;color:#ffd060}
+.velanote{display:flex;align-items:center;gap:8px;margin-top:10px;border:2px dashed #e0a040;color:#e0a040;padding:6px 8px}
+.velanote canvas{width:10px;height:16px;image-rendering:pixelated;flex:none}
+.maphud b{font-family:var(--num);font-size:13px;letter-spacing:0;color:var(--ink)}
+.foldh{display:flex;align-items:center;gap:8px;background:none;border:0;padding:0;color:inherit;cursor:pointer;text-align:left}
+.ftri{width:0;height:0;border-left:6px solid transparent;border-right:6px solid transparent;border-top:8px solid currentColor;transition:transform .15s}
+.ftri.closed{transform:rotate(-90deg)}
+.swaps{margin-top:8px;border-top:2px dotted var(--ink-soft);padding-top:6px}
+.swaps .label{display:block;margin-bottom:2px}
 /* cor dos números de PV e tochas: verde acima de 50%, amarelo até 20%, vermelho abaixo */
 .lv-g{color:#2a8a2a !important}.lv-y{color:#a07800 !important}.lv-r{color:#c0302a !important}
 :root[data-skin="zelda"] .lv-g{color:#7ee07e !important}:root[data-skin="zelda"] .lv-y{color:#f6d050 !important}:root[data-skin="zelda"] .lv-r{color:#ff6e5e !important}
@@ -1000,6 +1014,14 @@ function drawDie(cv, v, wob=0){
   ctx.fillRect(2+o,14,12,1); ctx.fillRect(14+o,2,1,12);
   (PIPS[v]||[]).forEach(([x,y])=>ctx.fillRect(x-1+o,y-1,2,2));
 }
+function velaTxt(n){ return n > 1 ? `Próximos ${n} baús em dobro` : "Próximo baú em dobro"; }
+function drawCandle(c){ const g = c.getContext("2d"); const px=(x,y,col)=>{g.fillStyle=col;g.fillRect(x,y,1,1);};
+  const t = performance.now()/180, f = Math.sin(t)>0;
+  g.clearRect(0,0,5,8);
+  px(2,0,f?"#ffd060":"#e0a040"); px(1,1,"#e0a040"); px(2,1,"#fff4c0"); px(3,1,"#e0a040"); px(2,2,"#3a2a1a");
+  for(let y=3;y<7;y++){ px(1,y,"#f2ead8"); px(2,y,"#f2ead8"); px(3,y,"#cfc3a8"); }
+  for(let x=0;x<5;x++) px(x,7,"#8a6a3a");
+}
 function dieCanvas(v){ const c = document.createElement("canvas"); c.width=15; c.height=15; drawDie(c, v); return c; }
 function rollInto(tray, n, fixed){
   return new Promise(res=>{
@@ -1454,8 +1476,17 @@ async function roll(label, n){
   g.innerHTML = `<div class="dice"></div><span class="label">${esc(label)}</span>`;
   tray.appendChild(g);
   const v = await rollInto(g.querySelector(".dice"), n);
-  rollLog.push({label, vals:v});
+  rollLog.push({label, vals:v, el:g});
   return v;
+}
+/* legenda embaixo do dado: o que o resultado significa */
+function rollNote(text, label){
+  for(let i=rollLog.length-1;i>=0;i--){
+    const r = rollLog[i]; if(label && r.label !== label) continue;
+    r.note = text;
+    if(r.el && r.el.isConnected){ let n = r.el.querySelector(".rnote"); if(!n){ n = document.createElement("span"); n.className = "rnote"; r.el.appendChild(n); } n.textContent = text; }
+    return;
+  }
 }
 async function rollPar(specs){
   return Promise.all(specs.map(([l,n])=>roll(l,n)));
@@ -1544,16 +1575,18 @@ async function trap(origin){
   const luck = hasItem(/^Poção da Sorte/);
   const [v] = await roll("Armadilha", 1);
   const t = DT().trap[v-1];
+  rollNote(t[0]==="nada" ? "Nada acontece" : t[0]==="blade" ? "Lâmina" : t[0]==="pit" ? "Fosso" : t[0]==="mon" ? "Monstros!" : t[0]==="dmg" ? `${t[2]} de dano` : "Armadilha");
   if(t[0] === "nada"){ log(t[1]); return true; }
   if(luck >= 0){ h.bag.splice(luck,1); log(`${t[1]} A Poção da Sorte te livrou da armadilha.`); return true; }
   if(seg.mon && seg.mon.sneak){ seg.mon.sneak = false; log("O barulho da armadilha alertou os monstros: você não está mais escondido."); }
   if(t[0]==="blade"){
     const [b] = await roll("Lâmina", 1);
+    rollNote(b===1 ? "Golpe mortal" : b===2 ? "Perde um braço" : "Passa raspando");
     if(b===1){
       if(hasItem(/^Coroa do Príncipe Degolado/) >= 0){ log("Uma lâmina desce do teto. A Coroa do Príncipe Degolado te salvou da morte."); return true; }
       killHero("Uma lâmina desceu do teto"); return false;
     }
-    if(b===2){ h.arms = (h.arms||2) - 1; log("Uma lâmina desce do teto e arranca um dos seus braços."); return true; }
+    if(b===2){ h.arms = (h.arms||2) - 1; log(`Uma lâmina desce do teto e arranca um dos seus braços. Restam ${h.arms}.`); return true; }
     log("Uma lâmina desce do teto e passa raspando."); return true;
   }
   if(t[0]==="dmg"){ log(t[1]); return hurt(t[2], t[1].replace(/\.$/,"")); }
@@ -1580,6 +1613,7 @@ async function doOpenDoor(id){
   startAction();
   if(!spendTorch(1, "Abrindo a porta")){ endAction(); return; }
   const [v] = await roll("Porta", 1);
+  rollNote(v === 1 ? "Armadilha!" : v <= 3 ? "Trancada" : "Destrancada");
   if(v === 1 && raceT("arenoso")){
     log("A porta tinha uma armadilha, mas você passa por ela sem ativá-la.");
     door.st = "open"; await reveal(door, true);
@@ -1628,6 +1662,7 @@ async function doUnlock(id, how){
     if(seg.mon && seg.mon.sneak){ seg.mon.sneak = false; seg.mon.first = "mon"; log("O barulho alertou os monstros daqui também."); }
     if(hasClass("Lenhador")){
       const [l] = await roll("Lenhador", 1);
+      rollNote(l === 6 ? "+1 tocha" : "Nada");
       if(l === 6){ h.torches = Math.min(10, h.torches+1); log("Da madeira da porta você fez 1 tocha."); }
     }
   }
@@ -1666,6 +1701,7 @@ async function reveal(door, quiet){
   const table = col === "stairs" ? SEG_STAIRS : col === "corr" ? DT().corr : DT().room;
   const [sv] = await roll("Segmento", 1);
   const code = table[sv-1], sh = SHAPES[code];
+  rollNote(sh.n);
   const rect = fitRect(lv, door.dir, tx, ty, sh.w, sh.d);
   if(!rect){ door.st = "rubble"; log("Atrás da porta só há escombros. Não dá para passar."); return; }
   const seg = makeSeg(lv, code, rect, door.dir, {from:door.id, quiet});
@@ -1677,6 +1713,8 @@ async function reveal(door, quiet){
     const c = cv[0]+cv[1], m = mv[0]+mv[1];
     applyContent(seg, c);
     seg.mon = monsterGroup(DT().mon[m-2], quiet ? "hero" : "mon"); if(seg.mon && !quiet) seg.mon.broke = true;
+    rollNote(DT().cont[c-2][0].replace(/\.$/,""), "Conteúdo");
+    rollNote(seg.mon ? `${seg.mon.qty} ${seg.mon.name}` : "Nenhum monstro", "Monstros");
     lv.last = seg.id;
   }
   if(seg.k === "stairs"){ seg.desc = d.pos.level >= 2 ? "Uma escadaria desce para a Sala Final." : "Uma escadaria desce para o próximo nível."; }
@@ -1710,6 +1748,7 @@ async function teleTo(level, id){
     seg.ret = d.visits;
     const mv = await roll("Monstros", 2);
     seg.mon = monsterGroup(DT().mon[mv[0]+mv[1]-2], "hero");
+    rollNote(seg.mon ? `${seg.mon.qty} ${seg.mon.name}` : "Nenhum monstro");
     log(seg.mon ? `Enquanto você esteve fora, ${seg.mon.qty} ${seg.mon.name} ocuparam ${seg.name.toLowerCase()}.` : `${seg.name} continua vazia.`);
     endAction();
   } else { persist(); render(); }
@@ -1749,6 +1788,7 @@ async function doWalk(id){
       const mv = await roll("Monstros", 2);
       const m = mv[0]+mv[1];
       seg.mon = monsterGroup(DT().mon[m-2], "hero");
+      rollNote(seg.mon ? `${seg.mon.qty} ${seg.mon.name}` : "Nenhum monstro");
       if(seg.mon) log(`Enquanto você esteve fora, ${seg.mon.qty} ${seg.mon.name} ocuparam ${seg.name.toLowerCase()}.`);
       else log(`${seg.name} continua vazia.`);
     }
@@ -1767,16 +1807,20 @@ async function doChest(){
   startAction();
   const v = await roll("Baú", 2);
   seg.chests = 0;
+  const vela = (h.velas||0) > 0; if(vela) h.velas--;
+  const lep = ARMOR_SLOTS.some(s=>h.armor[s] && /Leprechaun/.test(h.armor[s].n));
+  const cMul = (lep?2:1) * (vela?2:1), tMul = vela ? 2 : 1;
+  rollNote(v[0]===1 && v[1]===1 ? "Vazio e com armadilha!" : `${Math.max(...v)*cMul} moedas, ${Math.min(...v)*tMul} tesouro${Math.min(...v)*tMul>1?"s":""}${vela?" (Vela)":""}`);
   if(v[0]===1 && v[1]===1){
-    log("O baú estava vazio e ainda ativou uma armadilha!");
+    log(vela ? "O baú estava vazio e ainda ativou uma armadilha! A Vela dos Protetores se apagou à toa." : "O baú estava vazio e ainda ativou uma armadilha!");
     await trap("chest");
   } else {
     const coins = Math.max(...v), tres = Math.min(...v);
-    let c = coins;
-    if(ARMOR_SLOTS.some(s=>h.armor[s] && /Leprechaun/.test(h.armor[s].n))) c *= 2;
+    const c = coins * cMul;
     h.coins += c;
     const got = [];
-    for(let i=0;i<tres;i++){ const it = rollTreasure(); if(addItem(it)) got.push(it.n); }
+    if(vela) log("A Vela dos Protetores brilha: o baú vem em dobro!");
+    for(let i=0;i<tres*tMul;i++){ const it = rollTreasure(); if(addItem(it)) got.push(it.n); }
     log(`No baú: ${c} moedas` + (got.length ? ` e ${got.join("; ")}.` : "."));
   }
   endAction();
@@ -1789,6 +1833,7 @@ async function doSecret(){
   const dwarf = raceT("secret2");
   const v = await roll(dwarf ? "Passagem (Anão)" : "Passagem", dwarf ? 2 : 1);
   const r = Math.max(...v);
+  rollNote(r === 1 ? "Armadilha!" : r <= 3 ? "Nada" : r <= 5 ? "Baú escondido" : "Passagem secreta!");
   if(r === 1){ log("Procurando a passagem, você ativou uma armadilha!"); await trap("secret"); }
   else if(r <= 3) log("Não há nada aqui.");
   else if(r <= 5){ seg.chests++; log("Você encontrou um Baú escondido!"); }
@@ -1831,6 +1876,7 @@ async function doSneak(){
   for(let i=0;i<n;i++){
     const v = i < res.length ? res[i] : (halfling ? [d6(),d6()] : [d6()]);
     if(Math.max(...v) === 1) seen = true;
+    if(i < res.length) rollNote(Math.max(...v) === 1 ? "Te viu!" : "Não viu", `Monstro ${i+1}`);
   }
   if(seen){ g.first = "mon"; g.seen = true; log("Um dos monstros te viu! Eles atacam primeiro."); }
   else { g.sneak = true; log("Você passou despercebido. Pode pegar tesouros e abrir portas aqui."); }
@@ -1843,6 +1889,7 @@ async function doDefeat(){
   const spoils = groups.filter(x=>/Espólios/.test(x.tr)).reduce((a,x)=>a+x.list.length,0);
   for(let i=0;i<Math.min(spoils,6);i++){
     const [v] = await roll("Espólios", 1);
+    rollNote(v===6 ? "Tesouro" : v===5 ? "Chave" : "1 moeda");
     if(v===6){ const it = rollTreasure(); if(addItem(it)) log(`Espólios: ${it.n}.`); }
     else if(v===5){ if(addItem({n:"Chave (abre qualquer porta desta masmorra)", key:d.name})) log("Espólios: uma Chave."); }
     else { h.coins++; log("Espólios: 1 moeda."); }
@@ -1857,6 +1904,7 @@ async function doDefeat(){
   log(wasBoss ? `Você derrotou ${g.qty>1?"os":"o"} ${g.name}!` : `Você venceu ${g.qty} ${g.name}.`);
   if(wasBoss){
     const v = await roll("Tesouros", 2);
+    rollNote(`${v[0]+v[1]} tesouros`);
     seg.loot = {tres: v[0]+v[1]};
     d.complete = true;
     log(`Atrás do chefe você encontra ${v[0]+v[1]} Tesouros. Masmorra completada!`);
@@ -1869,6 +1917,7 @@ async function doBoss(seg){
   seg.final = true; seg.name = "Sala Final"; seg.chests = 0; seg.secret = false; seg.loot = null;
   const [v] = await roll("Chefe", 1);
   const [q, n, pv, dano, tr, txt] = DT().boss[v-1];
+  rollNote(q > 1 ? `${q} ${n}` : n);
   seg.desc = txt;
   seg.mon = {key:n, name:n, qty:q, pv, dano, tr, list:Array.from({length:q},()=>({pv,max:pv})), first:"hero", sneak:false, sneakTried:true, boss:true};
   if(q>1) seg.mon.name = txt.match(/(\d+\s)?([A-ZÁÉÍÓÚÂÊÔÃÕÇ][^.]*)\.$/) ? n+"s" : n;
@@ -2277,6 +2326,40 @@ function sprBlit(ctx, rows, pal, x0, y0, flip, alpha){
   for(let y=0;y<h;y++) for(let x=0;x<w;x++){ const c = get(x,y); if(c){ ctx.fillStyle = pal[c]; ctx.fillRect(x0+x, y0+y, 1, 1); } }
   ctx.restore();
 }
+/* cache: cada quadro de sprite vira uma imagem pronta (desenhar pixel a pixel só na primeira vez) */
+const sprCache = new Map();
+function sprCanvas(key, d, rows, pal, flip, white){
+  const id = key + "|" + (rows === d.rows2 ? 2 : 1) + "|" + (flip?1:0) + (white?"|w":"");
+  let c = sprCache.get(id); if(c) return c;
+  const w = Math.max(...rows.map(r=>r.length)), h = rows.length;
+  const cv = document.createElement("canvas"); cv.width = w+2; cv.height = h+2;
+  const g = cv.getContext("2d");
+  if(white){ const wp = {}; Object.keys(pal).forEach(k=>wp[k]="#ffffff"); sprBlit(g, rows, wp, 1, 1, flip); }
+  else sprBlit(g, rows, pal, 1, 1, flip);
+  c = {cv, w, h}; sprCache.set(id, c); return c;
+}
+const WINGED = /Morcego|Gárgula|Vespa|Besta Vampírica|Dragão|Anjo|Lorde Demônio|Mestre Vampiro/;
+/* movimento ocioso: respira (peito sobe 1 px), flutua (fantasmas e voadores) ou bate asas */
+function idleMode(key, d){ if(d.fly || d.alpha) return "float"; if(WINGED.test(key)) return "flap"; return "breathe"; }
+function blitAnimated(ctx, key, d, rows, x0, y0, t, opts){
+  const c = sprCanvas(key, d, rows, d.pal, d.flip, opts.white);
+  const ph = opts.ph || 0, mode = opts.still ? "none" : idleMode(key, d);
+  const W = c.w+2, H = c.h+2, X = x0-1, Y = y0-1;
+  ctx.save(); ctx.globalAlpha = (d.alpha || 1) * (opts.alpha === undefined ? 1 : opts.alpha);
+  if(mode === "float"){ ctx.drawImage(c.cv, X, Y + Math.round(Math.sin(t*1.3 + ph)*1.5)); ctx.restore(); return; }
+  ctx.drawImage(c.cv, X, Y);
+  if(mode === "breathe"){
+    const up = Math.sin(t*1.7 + ph) > .35 ? 1 : 0, split = Math.round(H*.45);
+    if(up) ctx.drawImage(c.cv, 0, 0, W, split, X, Y - 1, W, split);
+  } else if(mode === "flap"){
+    const f = Math.round(Math.sin(t*4.2 + ph)*1.6), side = Math.round(W*.3);
+    if(f){
+      ctx.drawImage(c.cv, 0, 0, side, H, X, Y + f, side, H);
+      ctx.drawImage(c.cv, W-side, 0, side, H, X + W - side, Y + f, side, H);
+    }
+  }
+  ctx.restore();
+}
 function sprCrown(ctx, x, y){
   const rows = ["y.y.y","yyyyy","yryby"]; const pal = {y:"#f0c838", r:"#e02828", b:"#3a7ad8"};
   sprBlit(ctx, rows, pal, x-2, y-3);
@@ -2364,15 +2447,21 @@ function drawBossEyes(ctx, key, cx, base, t){
   }
   if(d && d.proc === "tentacles"){ glow(cx, base-4, 10, "255,240,112"); ctx.fillStyle = "#fff070"; ctx.fillRect(cx-3, base-5, 6, 3); ctx.fillStyle = "#1a1218"; ctx.fillRect(cx-1, base-5, 2, 3); return; }
   const e = bossEyePx(key); if(!e || !e.px.length) return;
-  const x0 = Math.round(cx - e.w/2), y0 = base - e.h - e.lift;
+  const x0 = Math.round(cx - e.w/2); let y0 = base - e.h - e.lift;
+  const ph = (cx*7 + base*13) % 6.28, mode = idleMode(key, d), H2 = e.h + 2;
+  let lift2 = 0;
+  if(mode === "float") y0 += Math.round(Math.sin(t*1.3 + ph)*1.5);
+  else if(mode === "breathe" && Math.sin(t*1.7 + ph) > .35) lift2 = 1;
   const rgb = rgbOf(e.col);
-  e.px.forEach(([x,y])=>glow(x0+x+.5, y0+y+.5, 4, rgb));
-  ctx.fillStyle = e.col; e.px.forEach(([x,y])=>ctx.fillRect(x0+x, y0+y, 1, 1));
-  ctx.fillStyle = `rgba(255,255,240,${.3*a})`; e.px.forEach(([x,y])=>ctx.fillRect(x0+x, y0+y, 1, 1));
+  const ey = y => y0 + y - (lift2 && y+1 < Math.round(H2*.45) ? 1 : 0);
+  e.px.forEach(([x,y])=>glow(x0+x+.5, ey(y)+.5, 4, rgb));
+  ctx.fillStyle = e.col; e.px.forEach(([x,y])=>ctx.fillRect(x0+x, ey(y), 1, 1));
+  ctx.fillStyle = `rgba(255,255,240,${.3*a})`; e.px.forEach(([x,y])=>ctx.fillRect(x0+x, ey(y), 1, 1));
 }
 /* desenha um monstro com a base (pés) em (cx, base) */
 function drawMonsterSprite(ctx, key, cx, base, t, frame, opts){
   opts = opts || {};
+  if(opts.ph === undefined) opts.ph = (cx*7 + base*13) % 6.28;
   const d = sprDef(key) || sprDef("Esqueleto");
   if(d.proc==="slime"){ sprSlime(ctx, cx, base, d, t); return; }
   if(d.proc==="flame"){ ctx.fillStyle = "rgba(0,0,0,.35)"; ctx.fillRect(cx-5, base, 10, 2); sprFlame(ctx, cx, base-1, t); return; }
@@ -2389,7 +2478,7 @@ function drawMonsterSprite(ctx, key, cx, base, t, frame, opts){
   }
   if(d.fx==="halo"){ const a = .35 + Math.sin(t*1.4)*.15; ctx.fillStyle = `rgba(255,230,140,${a})`; ctx.fillRect(x0+2, y0-2, w-4, 3); }
   if(d.fx==="tail"){ for(let i=0;i<10;i++){ ctx.fillStyle = "#c87888"; ctx.fillRect((d.flip ? x0+w-1+i : x0-i), y0+7 + Math.round(Math.sin(t*2 + i*.6)*1.5), 1, 1); } }
-  sprBlit(ctx, rows, d.pal, x0, y0, d.flip, d.alpha);
+  blitAnimated(ctx, key, d, rows, x0, y0, t, opts);
   if(d.crown){ const [hx, hy] = d.crownAt || d.head || [Math.floor(w/2), 0]; sprCrown(ctx, x0 + (d.flip ? w-1-hx : hx), y0 + hy); }
   if(d.fx==="bomb" && d.bomb){
     const [bx, by] = d.bomb; const on = frame % 4;
@@ -3086,12 +3175,16 @@ function itemActs(it, i){
   const sp = (it.n.match(/^Pergaminho Mágico \((.+)\)/)||[])[1];
   const inDg = state.dungeon && state.dungeon.inside;
   const combatOnly = /^Poção da Fúria/.test(it.n) || (sp && !/^(Cura|Luz)$/.test(sp) && !(sp === "Teletransporte" && inDg));
+  if(/^Vela dos Protetores/.test(it.n)) acts.push(`<button class="use" data-act="useItem" data-i="${i}">Acender</button>`);
   if(/^Poção|^Pergaminho|^Safira/.test(it.n) && !combatOnly) acts.push(`<button class="use" data-act="useItem" data-i="${i}" ${noPot && /^Poção|^Pergaminho/.test(it.n)?"disabled":""}>Usar</button>`);
   acts.push(`<button class="use" data-act="drop" data-i="${i}">Descartar</button>`);
   const handNote = () => handsFree() === 0 ? "A única mão que sobra segura a tocha." : !hasLamp() && !raceT("tongue") ? "Todas as mãos estão ocupadas, e a tocha segura uma delas. A Lamparina libera essa mão." : "Todas as mãos estão ocupadas. Desequipe algo para liberar uma.";
   const note = isShield(it) && handsLeft() < 1 ? `<p class="muted small">O escudo ocupa uma mão. ${handNote()}</p>` : it.slot && noArmor ? `<p class="muted small">Sua raça não pode vestir armadura.</p>` : noPot && /^Poção|^Pergaminho/.test(it.n) ? `<p class="muted small">Ogros não usam poções nem pergaminhos.</p>` : combatOnly ? `<p class="muted small">${sp === "Teletransporte" ? "Só dá para usar dentro da masmorra." : "Só dá para usar durante um combate."}</p>` : it.weapon && handsFree() < (it.two ? 2 : 1) ? `<p class="muted small">${it.two ? "Armas de Duas Mãos precisam de duas mãos livres." : ""} ${handNote()}</p>` : "";
   return `<div class="item-acts">${acts.join("")}</div>${note}`;
 }
+/* quadros recolhíveis da ficha (lembra entre sessões) */
+function isFolded(k){ return !!(state.settings.fold && state.settings.fold[k]); }
+function foldHead(k, title, right){ const f = isFolded(k); return `<div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><button class="foldh" data-act="fold" data-k="${k}" aria-expanded="${!f}"><span class="ftri ${f?"closed":""}" aria-hidden="true"></span><h3>${title}</h3></button>${f ? "" : (right||"")}</div>`; }
 function viewSheet(){
   const h = state.hero;
   if(!h) return viewTitle();
@@ -3101,18 +3194,27 @@ function viewSheet(){
   const eq = state.ui.eqSel;
   const armor = ARMOR_SLOTS.map(s=>{
     const it = h.armor[s];
-    if(!it) return `<div class="slot"><b>${s}</b><span class="muted">vazio</span></div>`;
+    if(!it) return `<button class="slot eqbtn ${eq===s?"sel":""}" data-act="eqSel" data-s="${s}" style="text-align:left"><b>${s}</b><span class="muted">vazio</span></button>`;
     const cur = armorCur(it);
     return `<button class="slot full eqbtn ${eq===s?"sel":""}" data-act="eqSel" data-s="${s}"><b>${s}</b>${esc(it.n.split(" (")[0])}<span class="small">${cur}/${it.pv} PV${cur<it.pv?" · danificado":""}</span>${descHTML(it, false)}</button>`;
   }).join("");
+  /* itens da mochila que servem no espaço escolhido */
+  const swapList = (cands, act, label) => `<div class="swaps"><span class="label">${label}</span>${cands.length ? cands.map(({it,i,extra})=>`<div class="spell"><div class="txt"><b>${esc(itemName(it))}</b>${descHTML(it)}</div><button class="use" data-act="${act}" data-i="${i}" ${extra||""}>Trocar</button></div>`).join("") : `<p class="muted small">Nenhum item da mochila serve aqui.</p>`}</div>`;
   const eqActs = (() => {
     if(!eq) return "";
     const inDg = state.dungeon && state.dungeon.inside, smith = hasClass("Ferreiro");
     if(eq === "weapon" || /^off/.test(eq)){
-      if(eq === "weapon" ? h.weapon.unarmed : !offs(h)[+eq.slice(3)]) return "";
-      return `<div class="item-acts"><button class="use" data-act="unequip" data-s="${eq}" ${h.bag.length>=bagMax()?"disabled":""}>Desequipar</button></div>${h.bag.length>=bagMax()?`<p class="muted small">Mochila cheia.</p>`:""}`;
+      const k = eq === "weapon" ? -1 : +eq.slice(3), cur = k < 0 ? h.weapon : offs(h)[k];
+      if(!cur) return "";
+      const free = handsFree() - handsUsed() + handNeed(cur);
+      const cands = h.bag.map((it,i)=>({it,i})).filter(({it})=> (it.weapon && (it.two ? 2 : 1) <= (k < 0 ? handsFree() : free)) || (k >= 0 && isShield(it)))
+        .map(x=>({...x, extra: k < 0 ? `data-s="main"` : `data-k="${k}"`}));
+      const un = cur.unarmed ? "" : `<div class="item-acts"><button class="use" data-act="unequip" data-s="${eq}" ${h.bag.length>=bagMax()?"disabled":""}>Desequipar</button></div>${h.bag.length>=bagMax()?`<p class="muted small">Mochila cheia.</p>`:""}`;
+      return un + (handsFree() ? swapList(cands, k < 0 ? "wield" : "swapOff", k < 0 ? "Armas na mochila" : "Armas e escudos na mochila") : "");
     }
-    const it = h.armor[eq]; if(!it) return "";
+    const it = h.armor[eq];
+    const armorCands = (raceT("noArmor") || raceT("ogro")) ? [] : h.bag.map((x,i)=>({it:x,i})).filter(({it:x})=>x.slot === eq);
+    if(!it) return swapList(armorCands, "equip", `${eq} na mochila`);
     const dmg = armorCur(it) < it.pv;
     let fix = "";
     if(dmg){
@@ -3120,7 +3222,7 @@ function viewSheet(){
       if(smith) fix += `<button class="use" data-act="repairOne" data-s="${eq}" data-how="torch" ${h.torches<1?"disabled":""}>Consertar (1 tocha)</button>`;
       if(!fix) fix = `<button class="use" disabled>Consertar só na cidade</button>`;
     }
-    return `<div class="item-acts"><button class="use" data-act="unequip" data-s="${eq}" ${h.bag.length>=bagMax()?"disabled":""}>Desequipar</button>${fix}</div>${h.bag.length>=bagMax()?`<p class="muted small">Mochila cheia: não dá para guardar.</p>`:""}`;
+    return `<div class="item-acts"><button class="use" data-act="unequip" data-s="${eq}" ${h.bag.length>=bagMax()?"disabled":""}>Desequipar</button>${fix}</div>${h.bag.length>=bagMax()?`<p class="muted small">Mochila cheia: não dá para guardar.</p>`:""}${swapList(armorCands, "equip", `Outras peças de ${eq} na mochila`)}`;
   })();
   const sel = state.ui.bagSel;
   const bag = h.bag.map((it,i)=>`<div class="stack" style="gap:6px"><button class="item ${sel===i?"sel":""}" data-act="bagSel" data-i="${i}">${it.locked ? `<span class="muted" style="float:right">${lockIcon(true)}</span>` : ""}${esc(itemName(it))}${descHTML(it)}</button>${sel===i?itemActs(it,i):""}</div>`).join("");
@@ -3162,8 +3264,9 @@ function viewSheet(){
         <button class="mini" data-act="torch" data-d="1" aria-label="Ganhar tocha">+</button>
       </div>
     </div>
+    ${h.velas ? `<div class="velanote"><canvas width="5" height="8" data-candle></canvas><span>Vela dos Protetores acesa${h.velas>1?` (${h.velas})`:""}: ${velaTxt(h.velas).toLowerCase()}.</span></div>` : ""}
   </div>
-  <div class="grid2">
+  ${hasClass("Alquimista") ? `<button class="btn ghost" data-act="brew" ${h.coins<50 || h.bag.length>=bagMax() ?"disabled":""}>Fazer Poção de Vida <small>(50 moedas)</small></button>` : ""}
     <div class="sheet">
       <h3>Moedas</h3>
       <div class="counter">
@@ -3174,25 +3277,27 @@ function viewSheet(){
     </div>
     <div class="sheet">
       <h3>Mãos <span class="n" style="font-size:12px">${handsUsed(h)}/${handsFree(h)}</span></h3>
+      <p class="muted small" style="margin:0 0 6px">${h.arms||2} braço${(h.arms||2)===1?"":"s"}${hasLamp() || raceT("tongue") ? "" : ", um com a tocha"}</p>
+      ${state.ui.armsMsg ? `<p class="toast" style="text-align:left">${esc(state.ui.armsMsg)}</p>` : ""}
       <button class="slot full eqbtn ${eq==="weapon"?"sel":""}" data-act="eqSel" data-s="weapon"><b>${esc(h.weapon.n.split(" (")[0])}</b><span class="small">Dano ${h.weapon.d}${h.weapon.two?" · Duas Mãos":""}</span>${descHTML(h.weapon, false)}</button>
       ${offs(h).map((w,k)=>`<button class="slot full eqbtn ${eq==="off"+k?"sel":""}" data-act="eqSel" data-s="off${k}" style="margin-top:8px"><b>${esc(w.n.split(" (")[0])}</b><span class="small">${w.shield ? `Escudo: −${+((w.n.match(/em (\d)\)/)||[])[1]||1)} de dano` : `Dano ${w.d}${w.two?" · Duas Mãos":""}`}</span>${descHTML(w, false)}</button>`).join("")}
       ${Array.from({length:Math.max(0, handsLeft(h))},()=>`<div class="slot" style="margin-top:8px"><b>Mão livre</b><span class="muted">vazia</span></div>`).join("")}
       ${eq==="weapon"||/^off/.test(eq||"") ? eqActs : ""}
       ${handsFree() >= 2 ? `<p class="muted small">${(h.arms||2) > 2 ? `${h.arms} braços. ` : ""}${hasLamp() ? "A Lamparina libera a mão da tocha." : raceT("tongue") ? "A língua segura a tocha." : "Uma das mãos segura a tocha."} ${offWeapons(h).length ? (attacksPerTurn(h) > 1 ? `Como ${hasClass("Multidestro")?"Multidestro":"Ambidestro"}, ${attacksPerTurn(h)} armas atacam no mesmo turno.` : "No combate, você escolhe com qual arma atacar.") : ""}</p>` : ""}
     </div>
-  </div>
   <div class="sheet"><h3>Armadura</h3><div class="slots">${armor}</div>${eq && eq!=="weapon" && !/^off/.test(eq) ? eqActs : ""}${wearing(/^Chapéu do Bobo/) ? `<p class="muted small">Com o Chapéu do Bobo você não consegue Mover em Silêncio.</p>` : ""}</div>
   <div class="sheet">
-    <div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><h3>Mochila <span class="n" style="font-size:12px">${bagLabel(h)}</span></h3>${h.bag.length > 1 ? sortBtn() : ""}</div>
-    ${bag || `<p class="muted small">Vazia. Itens encontrados nas masmorras aparecem aqui.</p>`}
-    ${h.provisions ? `<div class="row" style="align-items:center;justify-content:space-between"><p class="small">Provisões: ${N(h.provisions)}</p>${raceT("fungo") ? `<button class="use" data-act="eat">Comer (1d6 PV)</button>` : ""}</div>` : ""}
+    ${foldHead("bag", "Mochila", h.bag.length > 1 ? sortBtn() : "")}
+    ${isFolded("bag") ? "" : `${bag || `<p class="muted small">Vazia. Itens encontrados nas masmorras aparecem aqui.</p>`}
+    ${h.provisions ? `<div class="row" style="align-items:center;justify-content:space-between"><p class="small">Provisões: ${N(h.provisions)}</p>${raceT("fungo") ? `<button class="use" data-act="eat">Comer (1d6 PV)</button>` : ""}</div>` : ""}`}
   </div>
-  ${spells.length ? `<div class="sheet"><h3>Magias</h3>${state.ui.recharge ? `<div class="sheet dashed" style="padding:10px"><p class="small">Recarregar Mana: escolha a magia que recupera 1 uso.</p><div class="dlist">${rechargeable().map(n=>`<button class="dbtn" data-act="rechargeOut" data-n="${esc(n)}">${n} ${h.spells[n].left}/${h.spells[n].max}</button>`).join("")}</div><button class="btn ghost" data-act="rechargeOutCancel">Cancelar</button></div>` : ""}${state.ui.stonePick ? `<div class="sheet dashed" style="padding:10px"><p class="small">Armadura de Pedra: escolha a peça que a magia vai criar (5 PV).</p><div class="dlist">${freeSlots().map(sl=>`<button class="dbtn" data-act="stoneOut" data-s="${sl}">${sl}</button>`).join("")}</div><button class="btn ghost" data-act="stoneOutCancel">Cancelar</button></div>` : ""}${h.shield ? `<p class="small">Escudo Mágico ativo: absorve ${h.shield} de dano.</p>` : ""}${spellHTML}<p class="muted small">Magias gastas voltam ao descansar na cidade.</p></div>` : ""}
+  ${spells.length ? `<div class="sheet">${foldHead("spells","Magias")}${isFolded("spells") ? "" : `${state.ui.recharge ? `<div class="sheet dashed" style="padding:10px"><p class="small">Recarregar Mana: escolha a magia que recupera 1 uso.</p><div class="dlist">${rechargeable().map(n=>`<button class="dbtn" data-act="rechargeOut" data-n="${esc(n)}">${n} ${h.spells[n].left}/${h.spells[n].max}</button>`).join("")}</div><button class="btn ghost" data-act="rechargeOutCancel">Cancelar</button></div>` : ""}${state.ui.stonePick ? `<div class="sheet dashed" style="padding:10px"><p class="small">Armadura de Pedra: escolha a peça que a magia vai criar (5 PV).</p><div class="dlist">${freeSlots().map(sl=>`<button class="dbtn" data-act="stoneOut" data-s="${sl}">${sl}</button>`).join("")}</div><button class="btn ghost" data-act="stoneOutCancel">Cancelar</button></div>` : ""}${h.shield ? `<p class="small">Escudo Mágico ativo: absorve ${h.shield} de dano.</p>` : ""}${spellHTML}<p class="muted small">Magias gastas voltam ao descansar na cidade.</p>`}</div>` : ""}
   ${(()=>{ const x = H(h), kills = Object.entries(x.kills).sort((a,b)=>b[1]-a[1]);
     const lost = state.cemetery.filter(g=>!g.retired && g.name!==h.name).length;
     const best = Object.entries(x.sets).sort((a,b)=>b[1].length-a[1].length)[0];
     const line = (k,v) => `<span>${k}</span><b>${v}</b>`;
-    return `<div class="sheet"><h3>Histórico</h3>
+    if(isFolded("hist")) return `<div class="sheet">${foldHead("hist","Histórico")}</div>`;
+    return `<div class="sheet">${foldHead("hist","Histórico")}
     <div class="hist">
       ${line("Monstros abatidos", N(x.total))}
       ${kills.map(([n,q])=>`<span class="small" style="padding-left:12px">${esc(n)}</span><b class="small">${N(q)}</b>`).join("")}
@@ -3210,11 +3315,11 @@ function viewSheet(){
     </div>
     ${best ? `<p class="muted small">Conjunto mais completo: ${esc(best[0])}.</p>` : ""}</div>`; })()}
   <div class="sheet">
-    <h3>Vantagens</h3>
-    <p class="adv"><b>${R(h.race).n}:</b> ${raceAdvHTML(R(h.race))}</p>
+    ${foldHead("adv","Vantagens")}
+    ${isFolded("adv") ? "" : `<p class="adv"><b>${R(h.race).n}:</b> ${raceAdvHTML(R(h.race))}</p>
     ${h.race2 && R(h.race2) ? `<p class="adv"><b>${R(h.race2).n} (herdada):</b> ${raceAdvHTML(R(h.race2))}</p>` : ""}
     <p class="adv"><b>${CLASSES[h.cls].n}:</b> ${CLASSES[h.cls].adv}</p>
-    ${(h.adv||[]).map(n=>`<p class="adv"><b>${n}:</b> ${ADV_BY_NAME[n].adv}${ADV_BY_NAME[n].how ? ` <span class="muted small">${ADV_BY_NAME[n].how}</span>` : ""}</p>`).join("")}
+    ${(h.adv||[]).map(n=>`<p class="adv"><b>${n}:</b> ${ADV_BY_NAME[n].adv}${ADV_BY_NAME[n].how ? ` <span class="muted small">${ADV_BY_NAME[n].how}</span>` : ""}</p>`).join("")}`}
   </div>
   ${state.ui.confirmDeath ? `
     <div class="sheet dashed">
@@ -3317,7 +3422,7 @@ function viewExplore(){
     if(seg.loot) acts.push(`<button class="btn" data-act="loot">Pegar: ${lootText(seg.loot)}</button>`);
     if(seg.stash && seg.stash.length && !state.ui.bagFull) acts.push(`<button class="btn" data-act="takeStash">Itens deixados aqui (${seg.stash.length})</button>`);
     if(seg.chests>0) acts.push(`<button class="btn" data-act="chest">Abrir baú</button>`);
-    if(seg.secret && !seg.secretTried) acts.push(`<button class="btn ghost" data-act="secret">Achar passagem secreta <small>(1 tocha)</small></button>`);
+    if(seg.secret && !seg.secretTried) acts.push(`<button class="btn ghost" data-act="secret">Procurar passagem secreta <small>(1 tocha)</small></button>`);
     if(seg.k==="room" && !seg.disarmed && !seg.final) acts.push(seg.trapSeen
       ? `<button class="btn ghost" data-act="disarm">Desarmar armadilhas <small>(1 tocha)</small></button>`
       : `<button class="btn ghost" disabled>Desarmar armadilhas <small>(nenhuma armadilha à vista)</small></button>`);
@@ -3362,15 +3467,14 @@ function viewExplore(){
   const canLeave = !isBlocked && pathClear();
   return `
   <div class="bar"><button class="back" data-act="go" data-to="sheet" aria-label="Ficha">◀</button><h2 class="sm">${esc(d.name)}<br><span class="label">Nível ${N(d.pos.level)}</span></h2></div>
-  <div class="strip">
-    <span>PV<b class="${lvc(h.pv,h.pvMax)}">${h.pv}/${h.pvMax}</b></span><span>Tochas<b class="${lvc(h.torches,10)}">${h.torches}</b></span><span>Moedas<b>${h.coins}</b></span><span>Mochila<b>${bagLabel(h)}</b></span>
-  </div>
+  <p class="muted small" style="margin:0">Toque numa porta ou sala. Arraste para mover e pince para dar zoom.</p>
   <div class="mapbox">
+    <div class="maphud"><span>PV<b class="${lvc(h.pv,h.pvMax)}">${h.pv}/${h.pvMax}</b></span><span>Tochas<b class="${lvc(h.torches,10)}">${h.torches}</b></span><span>Moedas<b>${h.coins}</b></span><span>Mochila<b>${bagLabel(h)}</b></span></div>
+    ${h.velas ? `<div class="mapbuff"><canvas width="5" height="8" data-candle></canvas>Vela · ${velaTxt(h.velas)}</div>` : ""}
     <canvas id="map" data-anim="map" aria-label="Mapa da masmorra visto de cima"></canvas>
  ${popHTML && !tele ? `<div class="doorpop" id="doorpop" data-door="${selDoor.id}">${popHTML}</div>` : ""}
     <div class="mapctl"><button data-act="zoom" data-z="1.3" aria-label="Aproximar">+</button><button data-act="zoom" data-z="0.77" aria-label="Afastar">−</button><button data-act="center" aria-label="Centralizar no aventureiro">◎</button><button data-act="go" data-to="sheet" aria-label="Ficha do personagem"><canvas width="13" height="13" data-clip></canvas></button></div>
   </div>
-  <p class="muted small" style="margin-top:-8px">Toque numa porta ou sala. Arraste para mover e pince para dar zoom.</p>
   <div class="etray" id="etray"></div>
   ${msg ? `<p class="toast">${esc(msg)}</p>` : ""}
   ${tele ? `<div class="sheet">
@@ -3426,7 +3530,6 @@ function viewCity(){
     <button class="btn ghost" data-act="buyTorch" ${h.coins<1||h.torches>=10?"disabled":""}>Comprar tocha <small>(1 moeda)</small></button>
     ${broken.length ? `<span class="label" style="margin-top:6px">Consertar armadura (1 moeda por peça)</span>
     ${broken.map(sl=>{ const p = h.armor[sl]; return `<div class="spell"><div class="txt"><b>${esc(itemName(p))}</b><span class="small" style="display:block">${sl} · <span class="${lvc(armorCur(p), p.pv)}">${armorCur(p)}/${p.pv} PV</span></span>${descHTML(p, false)}</div><button class="use" data-act="repair" data-s="${sl}" ${h.coins<1?"disabled":""}>Consertar</button></div>`; }).join("")}` : ""}
-    ${hasClass("Alquimista") ? `<button class="btn ghost" data-act="brew" ${h.coins<50?"disabled":""}>Fazer Poção de Vida <small>(50 moedas)</small></button>` : ""}
   </div>
   <div class="sheet">
     <h3>Vendedor</h3>
@@ -3499,7 +3602,7 @@ function viewAdvClass(){
    COMBATE (página 10 do livro)
    ========================================================= */
 const ABILITIES = ["Explosivo","Fogo","Horda","Magia","Morte Súbita","Necromancia","Regeneração","Paralisar"];
-let fxPops = [], heroHitUntil = 0, monHit = {};
+let fxPops = [], heroHitUntil = 0, monHit = {}, monAtk = {}, monDie = {};
 const C = () => state.combat;
 const alive = () => C().units.filter(u=>u.pv>0);
 const has = (u, t) => (u.tr||"").includes(t);
@@ -3514,7 +3617,7 @@ function startCombat(surprise){
   if(seg.mon.sneak){ seg.mon.sneak = false; }
   state.combat = {level:D().pos.level, seg:seg.id, units, sel:0, phase:first, round:1, log:[], fury:0, heroPar:0, pending:null, alloc:{}, hits:0};
   if(units.some(u=>has(u,"Morto-Vivo"))) H().undead++;
-  fxPops = []; monHit = {};
+  fxPops = []; monHit = {}; monAtk = {}; monDie = {};
   cLog(first === "hero" ? "O combate começa. Você ataca primeiro." : "O combate começa. Os monstros atacam primeiro.");
   go("combat");
   if(first === "mon") runMonsterTurn();
@@ -3548,9 +3651,11 @@ async function hitMonster(i, base, opts){
   pop(i, dmg ? "-"+dmg : "0", dmg ? "#fce870" : "#9aa6c4");
   if(dmg) cLog(`${u.name} sofre ${dmg} de dano${u.pv>0 ? ` (${u.pv}/${u.max} PV)` : ""}.`);
   if(u.pv <= 0){
+    monDie[i] = performance.now();
     cLog(`${u.name} foi derrotado.`);
     if(has(u,"Morto-Vivo")){
       const [r] = await roll(`${u.name}: Morto-Vivo`, 1);
+      rollNote(r === 1 ? "Levanta de novo!" : "Fica no chão");
       if(r === 1){ u.pv = 1; cLog(`${u.name} se levanta de novo com 1 PV!`); pop(i, "+1", "#6af06a"); }
     }
     if(u.pv <= 0 && !u.counted){ u.counted = true; recordKill(u); }
@@ -3701,7 +3806,7 @@ async function runMonsterTurn(){
     if(c.ethereal && dmg > 0) dmg -= 1;
     if(hasShield() && dmg > 0){ dmg = Math.max(0, dmg - shieldVal()); }
     if(has(u,"Veneno")) poison += dmg; else total += dmg;
-    monHit[i] = performance.now() + 250;
+    monAtk[i] = performance.now() + 320;
     if(!exploded) cLog(`${u.name} ataca: ${dmg} de dano${has(u,"Veneno") ? " de veneno" : ""}.`);
   }
   if(h.shield > 0 && total + poison > 0){
@@ -3797,12 +3902,22 @@ function drawArena(cv){
   [[24,12],[W-26,12]].forEach(([x,y],i)=>{ ctx.fillStyle = IRON[1]; ctx.fillRect(x-3, y+7, 7, 2); ctx.fillStyle = WOOD[2]; ctx.fillRect(x-1, y+1, 3, 6); flameZ(ctx, x, y-1, t, i*2.1); });
   const units = c.units, pos = arenaPositions(units.length, W);
   units.forEach((u,i)=>{
-    if(u.pv <= 0) return;
     const [x, y] = pos[i];
+    if(u.pv <= 0){
+      // morte: pisca em branco, afunda e some
+      const k = monDie[i] ? (now - monDie[i]) / 650 : 1;
+      if(k >= 1) return;
+      drawMonsterSprite(ctx, u.key, x, y + Math.round(k*6), t, frame, {alpha:1-k, still:true});
+      if(k < .35) drawMonsterSprite(ctx, u.key, x, y + Math.round(k*6), t, frame, {white:true, alpha:.8*(1-k/.35), still:true});
+      return;
+    }
     if(i === c.sel && c.phase !== "won"){ const by = y - 30 + (frame%4<2?0:1); ctx.fillStyle = "#f8e048"; ctx.fillRect(x-3, by, 7, 1); ctx.fillRect(x-2, by+1, 5, 1); ctx.fillRect(x-1, by+2, 3, 1); ctx.fillRect(x, by+3, 1, 1); }
     if(u.boss){ const g = ctx.createRadialGradient(x, y-10, 2, x, y-10, 26); g.addColorStop(0,"rgba(255,80,60,.22)"); g.addColorStop(1,"rgba(255,80,60,0)"); ctx.fillStyle = g; ctx.fillRect(x-26, y-36, 52, 52); }
-    const shake = (monHit[i] && monHit[i] > now) ? (frame%2 ? 1 : -1) : 0;
-    drawMonsterSprite(ctx, u.key, x + shake, y, t, frame);
+    const hit = monHit[i] && monHit[i] > now, shake = hit ? (frame%2 ? 1 : -1) : 0;
+    // ataque: avança em direção ao herói e volta
+    const ak = monAtk[i] && monAtk[i] > now ? 1 - (monAtk[i] - now)/320 : 0, lunge = ak ? Math.round(Math.sin(ak*Math.PI)*7) : 0;
+    drawMonsterSprite(ctx, u.key, x + shake, y + lunge, t, frame);
+    if(hit && monHit[i] - now > 140) drawMonsterSprite(ctx, u.key, x + shake, y + lunge, t, frame, {white:true, alpha:.75, still:true});
     if(u.frozen){ ctx.fillStyle = "rgba(160,220,255,.45)"; ctx.fillRect(x-10, y-22, 20, 22); }
     const bw = 20, f = u.pv/u.max;
     ctx.fillStyle = "#0c0a12"; ctx.fillRect(x-bw/2-1, y+4, bw+2, 4);
@@ -4009,9 +4124,9 @@ function render(){
     const tray = $("#etray");
     rollLog.forEach(r=>{
       const g = document.createElement("div"); g.className = "rg";
-      g.innerHTML = `<div class="dice"></div><span class="label">${esc(r.label)}</span>`;
+      g.innerHTML = `<div class="dice"></div><span class="label">${esc(r.label)}</span>${r.note ? `<span class="rnote">${esc(r.note)}</span>` : ""}`;
       r.vals.forEach(v=>g.querySelector(".dice").appendChild(dieCanvas(v)));
-      tray.appendChild(g);
+      tray.appendChild(g); r.el = g;
     });
     const cv = $("#map"); if(cv) bindMap(cv);
   }
@@ -4020,6 +4135,7 @@ function render(){
   document.querySelectorAll("canvas[data-shield]").forEach(drawShield);
   document.querySelectorAll("canvas[data-gear]").forEach(drawGear);
   document.querySelectorAll("canvas[data-clip]").forEach(drawClip);
+  document.querySelectorAll("canvas[data-candle]").forEach(drawCandle);
   paint();
 }
 
@@ -4157,6 +4273,15 @@ const actions = {
     if(old) h.bag.push(old);
     state.ui.bagSel = null; persist(); render();
   },
+  swapOff(b){
+    const h = state.hero, i = +b.dataset.i, k = +b.dataset.k, it = h.bag[i], o = offs(h), cur = o[k];
+    if(!it || !cur) return;
+    const need = isShield(it) ? 1 : it.two ? 2 : 1;
+    if(handsFree() - handsUsed() + handNeed(cur) < need) return;
+    h.bag.splice(i,1); h.bag.push(wCopy(cur));
+    o[k] = isShield(it) ? {n:it.n, shield:true} : {n:it.n, d:it.d, two:it.two, magic:it.magic};
+    persist(); render();
+  },
   wieldShield(b){
     const h = state.hero, i = +b.dataset.i, it = h.bag[i];
     if(!it || !isShield(it) || handsLeft() < 1) return;
@@ -4187,7 +4312,8 @@ const actions = {
     if(/^Poção de Magia/.test(it.n)) Object.values(h.spells).forEach(s=>s.left=s.max);
     if(/^Poção da Luminescência/.test(it.n)) h.torches = Math.min(10, h.torches+2);
     if(/^Poção da Salamandra/.test(it.n)) h.arms = Math.max(h.arms||2, raceStart(h).arms);
-    if(/^Poção Mão na Roda/.test(it.n)) h.arms = (h.arms||2) + 1;
+    if(/^Poção Mão na Roda/.test(it.n)){ h.arms = (h.arms||2) + 1; state.ui.armsMsg = `Um braço novo brota! Agora você tem ${h.arms} braços.`; }
+    if(/^Poção da Salamandra/.test(it.n)) state.ui.armsMsg = `Seu corpo se regenera: você tem ${h.arms} braços.`;
     const sp = (it.n.match(/^Pergaminho Mágico \((.+)\)/)||[])[1];
     let msg = `Você usou ${it.n.split(" (")[0]}.`;
     if(sp === "Cura"){ const before = h.pv; h.pv = Math.min(h.pvMax, h.pv+5); msg = `Você leu o Pergaminho de Cura e recuperou ${h.pv-before} PV.`; }
@@ -4195,6 +4321,7 @@ const actions = {
     else if(sp === "Teletransporte"){ startTele("scroll", it.n); return; }
     else if(sp) return;
     if(/^Poção da Fúria/.test(it.n)) return;
+    if(/^Vela dos Protetores/.test(it.n)){ h.velas = (h.velas||0) + 1; msg = `Você acendeu a Vela dos Protetores. ${velaTxt(h.velas)}.`; }
     if(/^Safira da Magia/.test(it.n)){ const s = SPELLS[d6()].n; h.spells[s] = h.spells[s] ? {max:h.spells[s].max+1, left:h.spells[s].left+1} : {max:1,left:1}; }
     h.bag.splice(i,1);
     if(state.dungeon && state.dungeon.inside) log(msg);
@@ -4373,7 +4500,8 @@ const actions = {
     state.ui.cityMsg = `Você comprou ${it.n.split(" (")[0]} por ${it.price} moedas.`;
     persist(); render();
   },
-  brew(){ const h = state.hero; if(!hasClass("Alquimista") || h.coins<50) return; h.coins -= 50; h.bag.push({n:"Poção de Vida (recupera todos os PV)"}); state.ui.cityMsg = "Você preparou uma Poção de Vida."; persist(); render(); },
+  brew(){ const h = state.hero; if(!hasClass("Alquimista") || h.coins<50 || h.bag.length>=bagMax()) return; h.coins -= 50; h.bag.push({n:"Poção de Vida (recupera todos os PV)"}); if(state.dungeon && state.dungeon.inside) log("Você preparou uma Poção de Vida."); persist(); render(); },
+  fold(b){ const k = b.dataset.k; state.settings.fold = state.settings.fold || {}; state.settings.fold[k] = !state.settings.fold[k]; persist(); render(); },
   buyAdv(b){
     const h = state.hero, a = ADV_BY_NAME[b.dataset.n];
     if(!a || hasClass(a.n) || !advStatus(a,h).ok || h.coins < a.cost) return;
@@ -4498,6 +4626,7 @@ function paint(){
     if(a==="map") drawMap(cv);
     if(a==="arena") drawArena(cv);
   });
+  document.querySelectorAll("canvas[data-candle]").forEach(drawCandle);
   document.querySelectorAll("canvas[data-mon]").forEach(cv=>{
     const ctx = cv.getContext("2d");
     ctx.fillStyle = "#0c0a12"; ctx.fillRect(0,0,48,40);
